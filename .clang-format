@@ -1,0 +1,110 @@
+# clang-format >= 11
+#
+# 风格基础：Linux kernel coding style；
+# 与上游 linux/.clang-format 的差异：
+#   IndentWidth / TabWidth / ContinuationIndentWidth 由 8 改为 4
+#   UseTab: Always -> Never（用空格，便于跨编辑器一致）
+#   删除了内核 ForEachMacros 列表（本工程不使用 list_for_each 等内核宏）
+#   删除了 ObjC / JavaScript / C++ namespace / 模板相关设置
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+# ---- 缩进 ----
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+IndentCaseLabels: false
+IndentGotoLabels: false
+IndentPPDirectives: None
+IndentWrappedFunctionNames: false
+
+# ---- 大括号（Linux kernel 风格：仅函数定义 { 换行） ----
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: true
+  AfterStruct: false
+  AfterUnion: false
+  AfterExternBlock: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+
+# ---- 行宽与对齐 ----
+ColumnLimit: 80
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignEscapedNewlines: Left
+AlignOperands: true
+AlignTrailingComments: false
+
+# ---- 单行折叠 ----
+AllowAllParametersOfDeclarationOnNextLine: false
+AllowShortBlocksOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakAfterDefinitionReturnType: None
+AlwaysBreakAfterReturnType: None
+AlwaysBreakBeforeMultilineStrings: false
+
+# ---- 参数打包 ----
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: false
+BreakStringLiterals: false
+
+# ---- 注释 ----
+CommentPragmas: '^ IWYU pragma:'
+ReflowComments: false
+
+# ---- include 排序 ----
+IncludeBlocks: Preserve
+IncludeCategories:
+  - Regex: '.*'
+    Priority: 1
+SortIncludes: false
+
+# ---- 空行 ----
+KeepEmptyLinesAtTheStartOfBlocks: false
+MaxEmptyLinesToKeep: 1
+
+# ---- 指针与类型转换 ----
+PointerAlignment: Right
+SpaceAfterCStyleCast: false
+SpacesInCStyleCastParentheses: false
+
+# ---- 空格 ----
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesBeforeTrailingComments: 1
+SpacesInAngles: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+
+# ---- 行宽惩罚权重（来自 git 项目的经验值） ----
+PenaltyBreakAssignment: 10
+PenaltyBreakBeforeFirstCallParameter: 30
+PenaltyBreakComment: 10
+PenaltyBreakFirstLessLess: 0
+PenaltyBreakString: 10
+PenaltyExcessCharacter: 100
+PenaltyReturnTypeOnItsOwnLine: 60
+
+# ---- 其它 ----
+DerivePointerAlignment: false
+DisableFormat: false
+ExperimentalAutoDetectBinPacking: false
+FixNamespaceComments: false
+Standard: Cpp03
+...
