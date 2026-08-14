@@ -1,0 +1,6 @@
+[submodule "Middlewares/threadx"]
+	path = Middlewares/threadx
+	url = https://gitlab.hanliql.com:2083/libs/threadx/threadx.git
+[submodule "Middlewares/netxduo"]
+	path = Middlewares/netxduo
+	url = https://gitlab.hanliql.com:2083/libs/threadx/netxduo.git
