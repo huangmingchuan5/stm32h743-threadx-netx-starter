@@ -11,7 +11,7 @@
 #include "tx_api.h"
 #include "tx_port.h"
 #include "tx_timer.h"
-#include "stm32f4xx_hal.h"
+#include "stm32h7xx_hal.h"
 #include "bsp.h"
 #include <stdbool.h>
 #include "threadx_printf.h"

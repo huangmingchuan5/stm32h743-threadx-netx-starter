@@ -16,7 +16,7 @@
   ******************************************************************************
   */
 
-#include "main.h"
+#include "stm32h7xx_hal.h"
 
 /**
   * Initializes the Global MSP.

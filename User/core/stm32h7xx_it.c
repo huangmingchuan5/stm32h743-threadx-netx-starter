@@ -15,9 +15,8 @@
   ******************************************************************************
   */
 
-#include "main.h"
+#include "stm32h7xx_hal.h"
 #include "stm32h7xx_it.h"
-extern TIM_HandleTypeDef htim7;
 
 /******************************************************************************/
 /*           Cortex Processor Interruption and Exception Handlers          */

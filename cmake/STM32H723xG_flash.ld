@@ -52,6 +52,9 @@
 /* Entry Point */
 ENTRY(Reset_Handler)
 
+/* ThreadX low-level initialization uses this vector-table symbol. */
+PROVIDE(_vectors = g_pfnVectors);
+
 /* Specify the memory areas */
 MEMORY
 {
@@ -230,13 +233,29 @@ SECTIONS
   PROVIDE( __bss_start = __tbss_start );
   PROVIDE( __bss_size = __bss_end - __bss_start );
 
-  /* User_heap_stack section, used to check that there is enough RAM left */
-  ._user_heap_stack (NOLOAD) :
+  /* User heap section */
+  ._user_heap (NOLOAD) :
   {
     . = ALIGN(8);
     PROVIDE ( end = . );
     PROVIDE ( _end = . );
     . = . + _Min_Heap_Size;
+    . = ALIGN(8);
+  } >DTCMRAM
+
+  /* ThreadX application memory starts after the C runtime heap. */
+  ._threadx_heap (NOLOAD) :
+  {
+    . = ALIGN(8);
+    __RAM_segment_used_end__ = .;
+    . = . + 1K;
+    . = ALIGN(8);
+  } >DTCMRAM
+
+  /* User stack section */
+  ._user_stack (NOLOAD) :
+  {
+    . = ALIGN(8);
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
   } >DTCMRAM
