@@ -18,8 +18,8 @@ add_firmware_outputs(app)
 set(FIRMWARE_HEX ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.hex)
 set(FIRMWARE_BIN ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.bin)
 set(FIRMWARE_MAP ${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}.map)
-set(BOOT_IMAGE_BIN ${CMAKE_BINARY_DIR}/boot_image.bin)
-set(APP_IMAGE_BIN ${CMAKE_BINARY_DIR}/app_image.bin)
+set(BOOT_BIN ${CMAKE_BINARY_DIR}/boot.bin)
+set(APP_BIN ${CMAKE_BINARY_DIR}/app.bin)
 set(BOOT_IMAGE_OBJECT ${CMAKE_BINARY_DIR}/boot_image.o)
 set(APP_IMAGE_OBJECT ${CMAKE_BINARY_DIR}/app_image.o)
 
@@ -27,8 +27,6 @@ set(APP_IMAGE_OBJECT ${CMAKE_BINARY_DIR}/app_image.o)
 function(add_firmware_image_object target section_name image_bin image_object)
     add_custom_command(
             OUTPUT ${image_object}
-            BYPRODUCTS ${image_bin}
-            COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${target}> ${image_bin}
             COMMAND ${CMAKE_OBJCOPY}
                 -I binary
                 -O elf32-littlearm
@@ -36,7 +34,7 @@ function(add_firmware_image_object target section_name image_bin image_object)
                 --rename-section .data=${section_name},alloc,load,readonly,data,contents
                 ${image_bin}
                 ${image_object}
-            DEPENDS ${target}
+            DEPENDS ${target} ${image_bin}
             COMMENT "Wrapping ${target} firmware image"
             VERBATIM
     )
@@ -47,8 +45,8 @@ function(add_firmware_image_object target section_name image_bin image_object)
     )
 endfunction()
 
-add_firmware_image_object(boot .boot_image ${BOOT_IMAGE_BIN} ${BOOT_IMAGE_OBJECT})
-add_firmware_image_object(app .app_image ${APP_IMAGE_BIN} ${APP_IMAGE_OBJECT})
+add_firmware_image_object(boot .boot_image ${BOOT_BIN} ${BOOT_IMAGE_OBJECT})
+add_firmware_image_object(app .app_image ${APP_BIN} ${APP_IMAGE_OBJECT})
 
 add_executable(${CMAKE_PROJECT_NAME}
         ${CMAKE_CURRENT_LIST_DIR}/firmware_container.S
