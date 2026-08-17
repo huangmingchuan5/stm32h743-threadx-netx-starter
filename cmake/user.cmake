@@ -13,3 +13,4 @@ set(USER_INCLUDE_DIRS
 
 include(${CMAKE_CURRENT_LIST_DIR}/user_boot.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/user_app.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/firmware_container.cmake)
