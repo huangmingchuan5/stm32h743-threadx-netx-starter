@@ -12,4 +12,4 @@ target_sources(threadx PRIVATE
         ${CMAKE_SOURCE_DIR}/User/threadx/tx_initialize_low_level.S
 )
 
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE azrtos::threadx)
+target_link_libraries(app PRIVATE azrtos::threadx)

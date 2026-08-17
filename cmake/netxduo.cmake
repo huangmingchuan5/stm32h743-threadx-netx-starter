@@ -6,4 +6,4 @@ add_subdirectory(
         EXCLUDE_FROM_ALL
 )
 
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE azrtos::netxduo)
+target_link_libraries(app PRIVATE azrtos::netxduo)

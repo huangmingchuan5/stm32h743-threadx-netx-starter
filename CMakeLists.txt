@@ -28,8 +28,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
 project(${CMAKE_PROJECT_NAME} LANGUAGES C ASM)
 message("Build type: " ${CMAKE_BUILD_TYPE})
 
-# Create an executable object type
-add_executable(${CMAKE_PROJECT_NAME})
+# Create independent bootloader and application images
+add_executable(boot EXCLUDE_FROM_ALL)
+add_executable(app EXCLUDE_FROM_ALL)
 
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)

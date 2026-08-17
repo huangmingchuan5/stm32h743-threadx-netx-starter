@@ -12,4 +12,4 @@ add_library(segger_rtt STATIC)
 target_include_directories(segger_rtt PUBLIC ${SEGGER_RTT_INCLUDE_DIRS})
 target_sources(segger_rtt PRIVATE ${SEGGER_RTT_SOURCES})
 
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE segger_rtt)
+target_link_libraries(app PRIVATE segger_rtt)
