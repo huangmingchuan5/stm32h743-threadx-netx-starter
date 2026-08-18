@@ -2,7 +2,7 @@ set(BOOT_SOURCES
         ${CMAKE_SOURCE_DIR}/User/boot/src/boot_main.c
 )
 
-target_include_directories(boot PRIVATE ${USER_INCLUDE_DIRS})
+configure_user_common(boot)
 target_sources(boot PRIVATE ${BOOT_SOURCES})
 target_compile_definitions(boot PRIVATE
         APP_FLASH_START_ADDRESS=${APP_FLASH_ORIGIN}UL
