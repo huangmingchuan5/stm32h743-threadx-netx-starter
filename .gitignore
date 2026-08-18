@@ -1,5 +1,8 @@
 # CLion
 .idea/
 
+# VS Code
+.vscode/
+
 # CMake
 /cmake/build/
