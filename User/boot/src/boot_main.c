@@ -3,9 +3,11 @@
  * @brief Bootloader entry and application handoff.
  */
 #include "stm32h7xx.h"
+#include "bsp_RTT_viewer.h"
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #if !defined(APP_FLASH_START_ADDRESS) || !defined(APP_FLASH_LENGTH)
 #error "Application FLASH layout is not configured"
@@ -74,12 +76,25 @@ __attribute__((noreturn)) static void boot_jump_to_app(uint32_t app_stack, uint3
  */
 int main(void)
 {
+    RTT_viewer_init();
+    printf("\r\n[BOOT] Bootloader started.\r\n");
+    printf("[BOOT] Application region: 0x%08lX - 0x%08lX.\r\n",
+           (unsigned long)APP_FLASH_START_ADDRESS,
+           (unsigned long)FLASH_END_ADDRESS);
+
     const uint32_t app_stack = *(const volatile uint32_t *)APP_FLASH_START_ADDRESS;
     const uint32_t app_reset = *(const volatile uint32_t *)(APP_FLASH_START_ADDRESS + sizeof(uint32_t));
 
+    printf("[BOOT] Application vector: MSP=0x%08lX, Reset=0x%08lX.\r\n",
+           (unsigned long)app_stack,
+           (unsigned long)app_reset);
+
     if (boot_app_is_valid(app_stack, app_reset)) {
+        printf("[BOOT] Application is valid, jumping to application.\r\n");
         boot_jump_to_app(app_stack, app_reset);
     }
+
+    printf("[BOOT] Application is invalid, bootloader halted.\r\n");
 
     while (1) {
     }
