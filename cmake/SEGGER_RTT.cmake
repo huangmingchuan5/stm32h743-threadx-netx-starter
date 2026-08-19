@@ -1,6 +1,6 @@
 set(SEGGER_RTT_INCLUDE_DIRS
         ${CMAKE_SOURCE_DIR}/Middlewares/SEGGER_RTT/RTT
-        ${CMAKE_SOURCE_DIR}/Middlewares/SEGGER_RTT/Config
+        ${CMAKE_SOURCE_DIR}/User/SEGGER_RTT/config
 )
 
 set(SEGGER_RTT_SOURCES
