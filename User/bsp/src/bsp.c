@@ -8,12 +8,23 @@
 
 void SystemClock_Config(void);
 
+void MPU_Config(void);
+
 /**
  * @brief 系统初始化，时钟初始化和必要组件的初始化。
  * @note 请在运行最初调用。
  */
 void System_Init(void)
 {
+    /* MPU Configuration */
+    MPU_Config();
+
+    /* Enable I-Cache */
+    SCB_EnableICache();
+
+    /* Enable D-Cache */
+    SCB_EnableDCache();
+
     /* HAL初始化 */
     HAL_Init();
 
@@ -83,4 +94,29 @@ void SystemClock_Config(void)
     RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
 
     HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3);
+}
+
+/**
+ * @brief MPU Configuration
+ */
+void MPU_Config(void)
+{
+    MPU_Region_InitTypeDef mpu_init = {0};
+
+    HAL_MPU_Disable();
+
+    mpu_init.Enable = MPU_REGION_ENABLE;
+    mpu_init.Number = MPU_REGION_NUMBER0;
+    mpu_init.BaseAddress = 0x30000000;
+    mpu_init.Size = MPU_REGION_SIZE_32KB;
+    mpu_init.SubRegionDisable = 0x00;
+    mpu_init.TypeExtField = MPU_TEX_LEVEL0;
+    mpu_init.AccessPermission = MPU_REGION_FULL_ACCESS;
+    mpu_init.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
+    mpu_init.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
+    mpu_init.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+    mpu_init.IsBufferable = MPU_ACCESS_BUFFERABLE;
+
+    HAL_MPU_ConfigRegion(&mpu_init);
+    HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 }

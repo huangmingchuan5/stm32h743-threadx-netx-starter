@@ -13,4 +13,7 @@
  */
 void AppTaskCreate(void)
 {
+    extern void thread_eth_create(void);
+
+    thread_eth_create();
 }

@@ -158,6 +158,26 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
+  .eth_rx_descriptors (NOLOAD) :
+  {
+    . = ALIGN(128);
+    KEEP(*(.RxDescripSection))
+    . = ALIGN(128);
+  } >RAM_D2
+
+  .eth_tx_descriptors (NOLOAD) :
+  {
+    KEEP(*(.TxDescripSection))
+    . = ALIGN(128);
+  } >RAM_D2
+
+  .netx_pool (NOLOAD) :
+  {
+    . = ALIGN(32);
+    KEEP(*(.NetXPoolSection))
+    . = ALIGN(32);
+  } >RAM_D1
+
   /* used by the startup to initialize data */
   _sidata = LOADADDR(.data);
 
