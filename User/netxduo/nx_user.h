@@ -128,9 +128,9 @@
 /* Configuration options for IPv6 */
 
 /* Disable IPv6 processing in NetX Duo.  */
-/*
+
 #define NX_DISABLE_IPV6
-*/
+
 
 /* Define the number of entries in IPv6 address pool. */
 /*
@@ -768,5 +768,18 @@
 /*
 #define NX_ENABLE_VLAN
 */
+
+/*
+ * 以太网线程优先级规划（数字越小越高）：
+ *   2  NetX IP 线程（app_eth.c THREAD_NETX_PRIO）—— 严格最高
+ *   3  预留：实时性最高的用户网络应用线程
+ *   4  预留：实时性次一档的网络应用
+ *   5  预留：NetX addons（SNTP / mDNS 等）
+ *   6  NetX DHCP 内部线程（本宏覆盖）
+ *  10  App ETH 后台三件套：主循环 / Link Check / DHCP 控制线程
+ *  11+ 业务线程
+ * DHCP 使用优先级 6，为实时网络应用保留 3-5。
+ */
+#define NX_DHCP_THREAD_PRIORITY     6
 
 #endif
