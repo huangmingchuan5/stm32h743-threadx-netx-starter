@@ -130,9 +130,9 @@
    reactivating is performed in-line resulting in faster timer processing but slightly larger
    code size.  */
 
-/*
+
 #define TX_REACTIVATE_INLINE
-*/
+
 
 /* Determine is stack filling is enabled. By default, ThreadX stack filling is enabled,
    which places an 0xEF pattern in each byte of each thread's stack.  This is used by
@@ -170,9 +170,9 @@
    the .bss section prior to ThreadX running, the define can be used to eliminate unnecessary
    clearing of ThreadX global variables.  */
 
-/*
+
 #define TX_DISABLE_REDUNDANT_CLEARING
-*/
+
 
 /* Determine if no timer processing is required. This option will help eliminate the timer
    processing when not needed. The user will also have to comment out the call to
@@ -191,18 +191,16 @@
    enabled. If the application does not use notify callbacks, they may be disabled to reduce
    code size and improve performance.  */
 
-/*
+
 #define TX_DISABLE_NOTIFY_CALLBACKS
-*/
 
 
 /* Determine if the tx_thread_resume and tx_thread_suspend services should have their internal
    code in-line. This results in a larger image, but improves the performance of the thread
    resume and suspend services.  */
 
-/*
+
 #define TX_INLINE_THREAD_RESUME_SUSPEND
-*/
 
 
 /* Determine if the internal ThreadX code is non-interruptable. This results in smaller code
