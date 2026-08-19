@@ -61,12 +61,13 @@ __flash_region_length__ = DEFINED(__flash_region_length__) ? __flash_region_leng
 /* Specify the memory areas */
 MEMORY
 {
-DTCMRAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
-RAM_D1 (xrw)      : ORIGIN = 0x24000000, LENGTH = 320K
-RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 32K
-RAM_D3 (xrw)      : ORIGIN = 0x38000000, LENGTH = 16K
-ITCMRAM (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
-FLASH (rx)      : ORIGIN = __flash_region_origin__, LENGTH = __flash_region_length__
+DTCMRAM (xrw)          : ORIGIN = 0x20000000, LENGTH = 128K
+RAM_D1_NOCACHE (xrw)   : ORIGIN = 0x24000000, LENGTH = 64K
+RAM_D1 (xrw)           : ORIGIN = 0x24010000, LENGTH = 256K
+RAM_D2 (xrw)           : ORIGIN = 0x30000000, LENGTH = 32K
+RAM_D3 (xrw)           : ORIGIN = 0x38000000, LENGTH = 16K
+ITCMRAM (xrw)          : ORIGIN = 0x00000000, LENGTH = 64K
+FLASH (rx)             : ORIGIN = __flash_region_origin__, LENGTH = __flash_region_length__
 }
 
 /* Highest address of the user mode stack */
@@ -176,7 +177,10 @@ SECTIONS
     . = ALIGN(32);
     KEEP(*(.NetXPoolSection))
     . = ALIGN(32);
-  } >RAM_D1
+  } >RAM_D1_NOCACHE
+
+  ASSERT(SIZEOF(.netx_pool) <= LENGTH(RAM_D1_NOCACHE),
+         "NetX packet pool exceeds the non-cacheable RAM_D1 region")
 
   /* used by the startup to initialize data */
   _sidata = LOADADDR(.data);

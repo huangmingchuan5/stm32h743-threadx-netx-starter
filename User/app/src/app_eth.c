@@ -47,10 +47,18 @@ void thread_eth_create(void)
 NX_PACKET_POOL eth_pool;
 NX_IP ip;
 
-#define ETH_PACKET_SIZE 1536
-#define NX_PACKET_POOL_SIZE ((ETH_PACKET_SIZE + sizeof(NX_PACKET)) * 30)
+#define ETH_PACKET_SIZE 1536U
+#define ETH_PACKET_COUNT 30U
+#define ALIGN_UP(value, alignment)                                      \
+    ((((value) + (alignment) - 1U) / (alignment)) * (alignment))
+#define NX_PACKET_HEADER_SIZE                                           \
+    ALIGN_UP(sizeof(NX_PACKET), NX_PACKET_ALIGNMENT)
+#define NX_PACKET_BLOCK_SIZE                                            \
+    ALIGN_UP(NX_PACKET_HEADER_SIZE + ETH_PACKET_SIZE,                   \
+             NX_PACKET_ALIGNMENT)
+#define NX_PACKET_POOL_SIZE (NX_PACKET_BLOCK_SIZE * ETH_PACKET_COUNT)
 
-ULONG packet_pool_area[NX_PACKET_POOL_SIZE / 4 + 4]
+ULONG packet_pool_area[NX_PACKET_POOL_SIZE / sizeof(ULONG)]
     __attribute__((section(".NetXPoolSection"), aligned(32)));
 
 #define THREAD_NETX_PRIO 2

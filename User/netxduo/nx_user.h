@@ -651,6 +651,9 @@
 
 /* Configuration options for Packet Pool */
 
+/* Use an application-provided packet pool for DHCP packets. */
+#define NX_DHCP_CLIENT_USER_CREATE_PACKET_POOL
+
 /* This define specifies the size of the physical packet header. The default value is 16 (based on
    a typical 16-byte Ethernet header).  */
 /*
@@ -683,6 +686,9 @@
 /*
 #define NX_PACKET_ALIGNMENT sizeof(ULONG)
 */
+
+/* Replace the definition above with this one when the packet pool is cacheable. */
+/* #define NX_PACKET_ALIGNMENT 32U */
 
 /* If defined, the packet chain feature is removed. */
 /*
@@ -764,4 +770,3 @@
 */
 
 #endif
-

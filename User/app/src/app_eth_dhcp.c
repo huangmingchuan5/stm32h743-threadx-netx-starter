@@ -25,6 +25,7 @@ static NX_DHCP s_dhcp;
 static UCHAR s_dhcp_created = NX_FALSE;
 
 extern NX_IP ip;
+extern NX_PACKET_POOL eth_pool;
 
 static void thread_eth_dhcp_entry(ULONG thread_input);
 
@@ -155,13 +156,22 @@ static void try_dhcp(const struct app_eth_config *cfg)
         s_dhcp_created = NX_FALSE;
     }
 
-    status = nx_dhcp_create(&s_dhcp, &ip, "stm32f4-dhcp-client");
+    status = nx_dhcp_create(&s_dhcp, &ip, "stm32h7-dhcp-client");
     if (status != NX_SUCCESS) {
         threadx_printf(Netx_Terminal,
                        "[dhcp] create failed: 0x%X\r\n", status);
         goto fallback;
     }
     s_dhcp_created = NX_TRUE;
+
+    status = nx_dhcp_packet_pool_set(&s_dhcp, &eth_pool);
+    if (status != NX_SUCCESS) {
+        threadx_printf(Netx_Terminal,
+                       "[dhcp] packet pool set failed: 0x%X\r\n", status);
+        nx_dhcp_delete(&s_dhcp);
+        s_dhcp_created = NX_FALSE;
+        goto fallback;
+    }
 
     status = nx_dhcp_start(&s_dhcp);
     if (status != NX_SUCCESS) {

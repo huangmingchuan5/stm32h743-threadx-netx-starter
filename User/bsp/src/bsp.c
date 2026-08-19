@@ -112,10 +112,23 @@ void MPU_Config(void)
     mpu_init.SubRegionDisable = 0x00;
     mpu_init.TypeExtField = MPU_TEX_LEVEL0;
     mpu_init.AccessPermission = MPU_REGION_FULL_ACCESS;
-    mpu_init.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
+    mpu_init.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
     mpu_init.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
     mpu_init.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
     mpu_init.IsBufferable = MPU_ACCESS_BUFFERABLE;
+
+    HAL_MPU_ConfigRegion(&mpu_init);
+
+    mpu_init.Number = MPU_REGION_NUMBER1;
+    mpu_init.BaseAddress = 0x24000000;
+    mpu_init.Size = MPU_REGION_SIZE_64KB;
+    mpu_init.SubRegionDisable = 0x00;
+    mpu_init.TypeExtField = MPU_TEX_LEVEL1;
+    mpu_init.AccessPermission = MPU_REGION_FULL_ACCESS;
+    mpu_init.DisableExec = MPU_INSTRUCTION_ACCESS_DISABLE;
+    mpu_init.IsShareable = MPU_ACCESS_SHAREABLE;
+    mpu_init.IsCacheable = MPU_ACCESS_NOT_CACHEABLE;
+    mpu_init.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
 
     HAL_MPU_ConfigRegion(&mpu_init);
     HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
