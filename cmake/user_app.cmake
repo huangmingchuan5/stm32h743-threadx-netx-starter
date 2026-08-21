@@ -8,7 +8,8 @@ set(APP_SOURCES
         ${CMAKE_SOURCE_DIR}/User/app/src/app_eth_config.c
         ${CMAKE_SOURCE_DIR}/User/app/src/app_eth_dhcp.c
         ${CMAKE_SOURCE_DIR}/User/app/src/app_eth_link_check.c
-        ${CMAKE_SOURCE_DIR}/User/app/src/app_tcp_echo.c
+        ${CMAKE_SOURCE_DIR}/User/app/src/app_tcp_client_echo.c
+        ${CMAKE_SOURCE_DIR}/User/app/src/app_tcp_server_echo.c
         ${CMAKE_SOURCE_DIR}/User/netxduo/nx_stm32_eth_driver.c
         ${CMAKE_SOURCE_DIR}/User/netxduo/lan8720/nx_stm32_phy_driver.c
         ${CMAKE_SOURCE_DIR}/User/dev/lan8742/lan8742.c

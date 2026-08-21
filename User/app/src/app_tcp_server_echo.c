@@ -1,32 +1,33 @@
 /**
- * @file    app_tcp_echo.c
- * @brief   TCP echo server，端口 7777，最多 10 个并发 client
+ * @file    app_tcp_server_echo.c
+ * @brief   TCP server echo，端口 7777，最多 10 个并发 client
  *
  * @note    动态 unlisten/listen 模型：单 listen 槽位 + relisten 接力，
  *          socket 池空就 unlisten 关门让超额 SYN 直接 RST。
  *          worker 与 socket 不绑定，N 个 worker 共用 N 个 socket。
- *          详细模型见 echo_callback_refill_or_close 上方注释
+ *          详细模型见 tcp_server_echo_refill_or_close 上方注释
  */
-#include "app_tcp_echo.h"
+#include "app_tcp_server_echo.h"
 #include "app_eth_link_check.h"
 #include "tx_api.h"
 #include "nx_api.h"
 #include "threadx_printf.h"
 
-#define ECHO_PORT             7777u
-#define ECHO_MAX_CLIENTS      10u
-#define ECHO_LISTEN_BACKLOG   1u
-#define ECHO_WINDOW_SIZE      2048u
+#define TCP_SERVER_ECHO_PORT           7777u
+#define TCP_SERVER_ECHO_MAX_CLIENTS    10u
+#define TCP_SERVER_ECHO_LISTEN_BACKLOG 1u
+#define TCP_SERVER_ECHO_WINDOW_SIZE    2048u
 
-#define THREAD_ECHO_PRIO      3u
-#define THREAD_ECHO_STACK     2048u
+#define TCP_SERVER_ECHO_THREAD_PRIO    3u
+#define TCP_SERVER_ECHO_STACK_SIZE     2048u
 
 extern NX_IP ip;
 
-static NX_TCP_SOCKET s_sockets[ECHO_MAX_CLIENTS];
-static TX_THREAD s_workers[ECHO_MAX_CLIENTS];
-static uint64_t s_stacks[ECHO_MAX_CLIENTS][THREAD_ECHO_STACK / 8];
-static char s_names[ECHO_MAX_CLIENTS][16];
+static NX_TCP_SOCKET s_sockets[TCP_SERVER_ECHO_MAX_CLIENTS];
+static TX_THREAD s_workers[TCP_SERVER_ECHO_MAX_CLIENTS];
+static uint64_t s_stacks[TCP_SERVER_ECHO_MAX_CLIENTS]
+                         [TCP_SERVER_ECHO_STACK_SIZE / 8];
+static char s_names[TCP_SERVER_ECHO_MAX_CLIENTS][16];
 
 /*
  * 动态 unlisten/listen 模型。
@@ -54,11 +55,11 @@ static char s_names[ECHO_MAX_CLIENTS][16];
  * relisten 期间内部再 get IP mutex，顺序固定：先 s_listen_mutex 再
  * IP mutex，没有反向路径，无死锁风险）：
  *
- *   echo_callback_refill_or_close（callback 触发时调）：
+ *   tcp_server_echo_refill_or_close（callback 触发时调）：
  *       从 free_q 拿 socket -> relisten 顶上槽位；
  *       free_q 空 -> unlisten 关门，s_listen_active = FALSE。
  *
- *   echo_worker_return_socket（worker 还 socket 时调）：
+ *   tcp_server_echo_return_socket（worker 还 socket 时调）：
  *       s_listen_active == FALSE -> 用该 socket 调 listen 重开门，
  *           s_listen_active = TRUE；
  *       否则 -> 推 free_q 待用。
@@ -71,11 +72,12 @@ static UCHAR s_refill_in_progress; /* 防 callback 重入 refill 循环 */
 
 static TX_QUEUE s_free_q;
 static TX_QUEUE s_work_q;
-static ULONG s_free_q_buf[ECHO_MAX_CLIENTS]; /* TX_1_ULONG 槽位 */
-static ULONG s_work_q_buf[ECHO_MAX_CLIENTS];
+static ULONG s_free_q_buf[TCP_SERVER_ECHO_MAX_CLIENTS]; /* TX_1_ULONG 槽位 */
+static ULONG s_work_q_buf[TCP_SERVER_ECHO_MAX_CLIENTS];
 
 /* listen callback 函数前向声明 */
-static void echo_listen_callback(NX_TCP_SOCKET *socket_ptr, UINT port);
+static void tcp_server_echo_listen_callback(NX_TCP_SOCKET *socket_ptr,
+                                            UINT port);
 
 /**
  * @brief  listen callback 触发的"顶槽位或关门"工作
@@ -89,7 +91,7 @@ static void echo_listen_callback(NX_TCP_SOCKET *socket_ptr, UINT port);
  *         直到 listen_queue 排空或 free_q 空。这样避免 nested relisten
  *         持有过期 listen_request 引用的风险
  */
-static void echo_callback_refill_or_close(void)
+static void tcp_server_echo_refill_or_close(void)
 {
     NX_TCP_SOCKET *next_sock;
     UINT status;
@@ -111,20 +113,23 @@ static void echo_callback_refill_or_close(void)
              * free_q 空，关门。NetX 会清掉 listen_queue 里所有排队
              * SYN（unlisten 内部行为），新 SYN 一律 RST。
              */
-            status = nx_tcp_server_socket_unlisten(&ip, ECHO_PORT);
+            status = nx_tcp_server_socket_unlisten(&ip,
+                                                   TCP_SERVER_ECHO_PORT);
             if (status == NX_SUCCESS) {
                 s_listen_active = NX_FALSE;
                 threadx_printf(Netx_Terminal,
-                               "[echo] listen closed (pool empty)\r\n");
+                               "[tcp_server_echo] listen closed (pool empty)\r\n");
             } else {
                 threadx_printf(Netx_Terminal,
-                               "[echo] unlisten failed: 0x%X\r\n",
+                               "[tcp_server_echo] unlisten failed: 0x%X\r\n",
                                status);
             }
             break;
         }
 
-        status = nx_tcp_server_socket_relisten(&ip, ECHO_PORT, next_sock);
+        status = nx_tcp_server_socket_relisten(&ip,
+                                               TCP_SERVER_ECHO_PORT,
+                                               next_sock);
         if (status == NX_SUCCESS) {
             /* 顶上了，listen_queue 排空，正常等下次 SYN */
             break;
@@ -139,7 +144,8 @@ static void echo_callback_refill_or_close(void)
         }
         /* 其他错误极少见，归还 socket 避免泄漏并退出 */
         threadx_printf(Netx_Terminal,
-                       "[echo] cb relisten failed: 0x%X\r\n", status);
+                       "[tcp_server_echo] cb relisten failed: 0x%X\r\n",
+                       status);
         tx_queue_send(&s_free_q, &next_sock, TX_NO_WAIT);
         break;
     }
@@ -154,23 +160,23 @@ static void echo_callback_refill_or_close(void)
  * @note   当前关门：用该 socket 调 listen 重开门；
  *         当前开门：简单推 free_q 待用
  */
-static void echo_worker_return_socket(NX_TCP_SOCKET *sock)
+static void tcp_server_echo_return_socket(NX_TCP_SOCKET *sock)
 {
     UINT status;
 
     tx_mutex_get(&s_listen_mutex, TX_WAIT_FOREVER);
 
     if (!s_listen_active) {
-        status = nx_tcp_server_socket_listen(&ip, ECHO_PORT, sock,
-                                             ECHO_LISTEN_BACKLOG,
-                                             echo_listen_callback);
+        status = nx_tcp_server_socket_listen(&ip, TCP_SERVER_ECHO_PORT, sock,
+                                             TCP_SERVER_ECHO_LISTEN_BACKLOG,
+                                             tcp_server_echo_listen_callback);
         if (status == NX_SUCCESS) {
             s_listen_active = NX_TRUE;
             threadx_printf(Netx_Terminal,
-                           "[echo] listen reopened\r\n");
+                           "[tcp_server_echo] listen reopened\r\n");
         } else {
             threadx_printf(Netx_Terminal,
-                           "[echo] reopen listen failed: 0x%X\r\n",
+                           "[tcp_server_echo] reopen listen failed: 0x%X\r\n",
                            status);
             /* 退路：推 free_q 等下次再试 */
             tx_queue_send(&s_free_q, &sock, TX_NO_WAIT);
@@ -188,7 +194,8 @@ static void echo_worker_return_socket(NX_TCP_SOCKET *sock)
  * @param  port       监听端口（未使用）
  * @note   把 socket 派给 worker 去 accept，并触发 refill/关门维护槽位
  */
-static void echo_listen_callback(NX_TCP_SOCKET *socket_ptr, UINT port)
+static void tcp_server_echo_listen_callback(NX_TCP_SOCKET *socket_ptr,
+                                            UINT port)
 {
     (void)port;
 
@@ -196,7 +203,7 @@ static void echo_listen_callback(NX_TCP_SOCKET *socket_ptr, UINT port)
     tx_queue_send(&s_work_q, &socket_ptr, TX_NO_WAIT);
 
     /* 顶槽位或关门 */
-    echo_callback_refill_or_close();
+    tcp_server_echo_refill_or_close();
 }
 
 /**
@@ -207,7 +214,7 @@ static void echo_listen_callback(NX_TCP_SOCKET *socket_ptr, UINT port)
  *         NX_DISCONNECT_FAILED (0x41)：disconnect 挂起期间被 RST 异步唤醒。
  *         按 NetXDuo 官方 demo idiom 这两种状态都吞掉继续 unaccept
  */
-static void echo_disconnect_cleanup(NX_TCP_SOCKET *sock)
+static void tcp_server_echo_disconnect_cleanup(NX_TCP_SOCKET *sock)
 {
     UINT status;
 
@@ -224,7 +231,8 @@ static void echo_disconnect_cleanup(NX_TCP_SOCKET *sock)
         status != NX_NOT_CONNECTED &&
         status != NX_DISCONNECT_FAILED)
         threadx_printf(Netx_Terminal,
-                       "[echo] disconnect failed: 0x%X\r\n", status);
+                       "[tcp_server_echo] disconnect failed: 0x%X\r\n",
+                       status);
 
     nx_tcp_server_socket_unaccept(sock);
 }
@@ -235,7 +243,7 @@ static void echo_disconnect_cleanup(NX_TCP_SOCKET *sock)
  * @note   循环：从 work_q 拿 socket，accept，零拷贝 echo 直到对端断开，
  *         cleanup 后归还 socket。N 个 worker 共用 N 个 socket，不绑定
  */
-static void echo_worker_entry(ULONG idx)
+static void tcp_server_echo_worker_entry(ULONG idx)
 {
     NX_TCP_SOCKET *sock;
     NX_PACKET *pkt;
@@ -255,9 +263,10 @@ static void echo_worker_entry(ULONG idx)
         status = nx_tcp_server_socket_accept(sock, TX_WAIT_FOREVER);
         if (status != NX_SUCCESS) {
             threadx_printf(Netx_Terminal,
-                           "[echo] accept failed: 0x%X\r\n", status);
-            echo_disconnect_cleanup(sock);
-            echo_worker_return_socket(sock);
+                           "[tcp_server_echo] accept failed: 0x%X\r\n",
+                           status);
+            tcp_server_echo_disconnect_cleanup(sock);
+            tcp_server_echo_return_socket(sock);
             continue;
         }
 
@@ -266,7 +275,7 @@ static void echo_worker_entry(ULONG idx)
 
             nx_tcp_socket_peer_info_get(sock, &peer_ip, &peer_port);
             threadx_printf(Netx_Terminal,
-                           "[echo] client connected on socket %p"
+                           "[tcp_server_echo] client connected on socket %p"
                            " from %lu.%lu.%lu.%lu:%lu\r\n",
                            (void *)sock,
                            (peer_ip >> 24) & 0xFF,
@@ -289,7 +298,7 @@ static void echo_worker_entry(ULONG idx)
             status = nx_tcp_socket_receive(sock, &pkt, NX_WAIT_FOREVER);
             if (status != NX_SUCCESS) {
                 threadx_printf(Netx_Terminal,
-                               "[echo] receive failed: 0x%X\r\n",
+                               "[tcp_server_echo] receive failed: 0x%X\r\n",
                                status);
                 break;
             }
@@ -297,7 +306,7 @@ static void echo_worker_entry(ULONG idx)
             status = nx_tcp_socket_send(sock, pkt, TX_WAIT_FOREVER);
             if (status != NX_SUCCESS) {
                 threadx_printf(Netx_Terminal,
-                               "[echo] send failed: 0x%X\r\n",
+                               "[tcp_server_echo] send failed: 0x%X\r\n",
                                status);
                 nx_packet_release(pkt);
                 break;
@@ -305,11 +314,11 @@ static void echo_worker_entry(ULONG idx)
         }
 
         threadx_printf(Netx_Terminal,
-                       "[echo] client disconnected on socket %p\r\n",
+                       "[tcp_server_echo] client disconnected on socket %p\r\n",
                        (void *)sock);
 
-        echo_disconnect_cleanup(sock);
-        echo_worker_return_socket(sock);
+        tcp_server_echo_disconnect_cleanup(sock);
+        tcp_server_echo_return_socket(sock);
     }
 }
 
@@ -322,7 +331,7 @@ static uint64_t s_setup_stack[1024 / 8];
  * @note   独立线程是为了不阻塞 thread_eth_entry——后者还要在它后面拉
  *         其他业务模块
  */
-static void echo_setup_entry(ULONG arg)
+static void tcp_server_echo_setup_entry(ULONG arg)
 {
     NX_TCP_SOCKET *sock;
     ULONG i;
@@ -332,14 +341,16 @@ static void echo_setup_entry(ULONG arg)
 
     app_eth_link_wait_up(TX_WAIT_FOREVER);
 
-    for (i = 0; i < ECHO_MAX_CLIENTS; i++) {
-        status = nx_tcp_socket_create(&ip, &s_sockets[i], "echo socket",
+    for (i = 0; i < TCP_SERVER_ECHO_MAX_CLIENTS; i++) {
+        status = nx_tcp_socket_create(&ip, &s_sockets[i],
+                                      "server echo socket",
                                       NX_IP_NORMAL, NX_FRAGMENT_OKAY,
                                       NX_IP_TIME_TO_LIVE,
-                                      ECHO_WINDOW_SIZE, NX_NULL, NX_NULL);
+                                      TCP_SERVER_ECHO_WINDOW_SIZE,
+                                      NX_NULL, NX_NULL);
         if (status != NX_SUCCESS) {
             threadx_printf(Netx_Terminal,
-                           "[echo] socket %lu create failed: 0x%X\r\n",
+                           "[tcp_server_echo] socket %lu create failed: 0x%X\r\n",
                            i, status);
             return;
         }
@@ -347,26 +358,29 @@ static void echo_setup_entry(ULONG arg)
 
     /* socket[0] 占住 listen 槽位首次开门，其余进 free_q */
     tx_mutex_get(&s_listen_mutex, TX_WAIT_FOREVER);
-    status = nx_tcp_server_socket_listen(&ip, ECHO_PORT, &s_sockets[0],
-                                         ECHO_LISTEN_BACKLOG,
-                                         echo_listen_callback);
+    status = nx_tcp_server_socket_listen(
+        &ip, TCP_SERVER_ECHO_PORT, &s_sockets[0],
+        TCP_SERVER_ECHO_LISTEN_BACKLOG,
+        tcp_server_echo_listen_callback);
     if (status != NX_SUCCESS) {
         tx_mutex_put(&s_listen_mutex);
         threadx_printf(Netx_Terminal,
-                       "[echo] initial listen failed: 0x%X\r\n", status);
+                       "[tcp_server_echo] initial listen failed: 0x%X\r\n",
+                       status);
         return;
     }
     s_listen_active = NX_TRUE;
     tx_mutex_put(&s_listen_mutex);
 
-    for (i = 1; i < ECHO_MAX_CLIENTS; i++) {
+    for (i = 1; i < TCP_SERVER_ECHO_MAX_CLIENTS; i++) {
         sock = &s_sockets[i];
         tx_queue_send(&s_free_q, &sock, TX_NO_WAIT);
     }
 
     threadx_printf(Netx_Terminal,
-                   "[echo] listen on port %u, max clients %u\r\n",
-                   (unsigned)ECHO_PORT, (unsigned)ECHO_MAX_CLIENTS);
+                   "[tcp_server_echo] listen on port %u, max clients %u\r\n",
+                   (unsigned)TCP_SERVER_ECHO_PORT,
+                   (unsigned)TCP_SERVER_ECHO_MAX_CLIENTS);
 
     while (1) {
         tx_thread_sleep(10000);
@@ -374,47 +388,49 @@ static void echo_setup_entry(ULONG arg)
 }
 
 /**
- * @brief  创建 TCP echo 服务所需的全部内核对象与线程
+ * @brief  创建 TCP server echo 所需的全部内核对象与线程
  * @note   thread_eth_entry 在 IP/TCP 启用后调用一次。
- *         监听端口 7777，最大并发 ECHO_MAX_CLIENTS 个 client。
- *         真正的 listen 由 echo_setup_entry 在 link UP 后做，本函数立即返回
+ *         监听端口 7777，最大并发 TCP_SERVER_ECHO_MAX_CLIENTS 个 client。
+ *         真正的 listen 由 tcp_server_echo_setup_entry 在 link UP 后做，
+ *         本函数立即返回
  */
-void app_tcp_echo_create(void)
+void app_tcp_server_echo_create(void)
 {
     ULONG i;
 
-    tx_mutex_create(&s_listen_mutex, "echo listen mtx", TX_NO_INHERIT);
+    tx_mutex_create(&s_listen_mutex, "server echo listen mtx",
+                    TX_NO_INHERIT);
     s_listen_active = NX_FALSE;
     s_refill_in_progress = NX_FALSE;
 
-    tx_queue_create(&s_free_q, "echo free q", TX_1_ULONG,
+    tx_queue_create(&s_free_q, "server echo free q", TX_1_ULONG,
                     s_free_q_buf, sizeof(s_free_q_buf));
-    tx_queue_create(&s_work_q, "echo work q", TX_1_ULONG,
+    tx_queue_create(&s_work_q, "server echo work q", TX_1_ULONG,
                     s_work_q_buf, sizeof(s_work_q_buf));
 
-    for (i = 0; i < ECHO_MAX_CLIENTS; i++) {
-        snprintf(s_names[i], sizeof(s_names[i]), "echo#%lu", i);
+    for (i = 0; i < TCP_SERVER_ECHO_MAX_CLIENTS; i++) {
+        snprintf(s_names[i], sizeof(s_names[i]), "srv_echo#%lu", i);
 
         tx_thread_create(&s_workers[i], /* 任务控制块地址 */
                          s_names[i], /* 任务名 */
-                         echo_worker_entry, /* 启动任务函数地址 */
+                         tcp_server_echo_worker_entry, /* 启动任务函数地址 */
                          i, /* 传递给任务的参数 */
                          &s_stacks[i][0], /* 堆栈基地址 */
-                         THREAD_ECHO_STACK, /* 堆栈空间大小 */
-                         THREAD_ECHO_PRIO, /* 任务优先级 */
-                         THREAD_ECHO_PRIO, /* 任务抢占阀值 */
+                         TCP_SERVER_ECHO_STACK_SIZE, /* 堆栈空间大小 */
+                         TCP_SERVER_ECHO_THREAD_PRIO, /* 任务优先级 */
+                         TCP_SERVER_ECHO_THREAD_PRIO, /* 任务抢占阀值 */
                          TX_NO_TIME_SLICE, /* 不开启时间片 */
                          TX_AUTO_START); /* 创建后立即启动 */
     }
 
     tx_thread_create(&s_setup_thread, /* 任务控制块地址 */
-                     "echo setup", /* 任务名 */
-                     echo_setup_entry, /* 启动任务函数地址 */
+                     "server echo setup", /* 任务名 */
+                     tcp_server_echo_setup_entry, /* 启动任务函数地址 */
                      0, /* 传递给任务的参数 */
                      &s_setup_stack[0], /* 堆栈基地址 */
                      sizeof(s_setup_stack), /* 堆栈空间大小 */
-                     THREAD_ECHO_PRIO, /* 任务优先级 */
-                     THREAD_ECHO_PRIO, /* 任务抢占阀值 */
+                     TCP_SERVER_ECHO_THREAD_PRIO, /* 任务优先级 */
+                     TCP_SERVER_ECHO_THREAD_PRIO, /* 任务抢占阀值 */
                      TX_NO_TIME_SLICE, /* 不开启时间片 */
                      TX_AUTO_START); /* 创建后立即启动 */
 }

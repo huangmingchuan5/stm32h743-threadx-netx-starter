@@ -1,7 +1,7 @@
 /**
  * @file    app_eth.c
  * @brief   ETH 主线程 thread_eth_entry：拉起 NetX IP 实例并孵化
- *          link_check / dhcp / tcp_echo 三条业务线程；附带状态/统计信息表
+ *          link_check / dhcp / tcp_server_echo / tcp_client_echo 业务线程；附带状态表
  *
  * @note    对外接口契约见 app_eth.h。本文件还托管 NetX IP 线程栈和包池。
  */
@@ -14,7 +14,8 @@
 #include "app_eth_link_check.h"
 #include "app_eth_dhcp.h"
 #include "app_eth_config.h"
-#include "app_tcp_echo.h"
+#include "app_tcp_client_echo.h"
+#include "app_tcp_server_echo.h"
 
 #define THREAD_ETH_PRIO 10u
 #define THREAD_ETH_STACK_SIZE 4096u
@@ -72,8 +73,8 @@ ULONG arp_space_area[512 / sizeof(ULONG)];
  * @brief  ETH 主线程入口
  * @param  thread_input 未使用
  * @note   按依赖顺序初始化 config / packet pool / IP / ARP / ICMP / UDP / TCP，
- *         再拉起 link_check、dhcp、tcp_echo 三条业务线程，最后进入信息表
- *         刷新循环（每 NX_IP_PERIODIC_RATE 一次）
+ *         再拉起 link_check、dhcp、tcp_server_echo、tcp_client_echo 业务线程，
+ *         最后进入信息表刷新循环（每 NX_IP_PERIODIC_RATE 一次）
  */
 void thread_eth_entry(ULONG thread_input)
 {
@@ -117,7 +118,9 @@ void thread_eth_entry(ULONG thread_input)
 
     app_eth_dhcp_create();
 
-    app_tcp_echo_create();
+    app_tcp_server_echo_create();
+
+    app_tcp_client_echo_create();
 
     /* 主循环：每秒刷新一次以太网状态表到 Net_Info_Terminal */
     while (1) {
