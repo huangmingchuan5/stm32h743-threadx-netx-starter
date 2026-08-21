@@ -94,7 +94,7 @@ struct app_eth_status {
  * @brief  把内置默认 cfg 填到 *cfg
  * @param  cfg 待填充；NX_NULL 直接返回
  * @note   默认 DHCP 启用，静态回退 192.168.2.233/24 gw=.1，
- *         DNS 8.8.8.8/8.8.4.4，MAC OUI 00:80:E1（ST 分配）
+ *         DNS 8.8.8.8/8.8.4.4，MAC 根据芯片唯一 ID 生成
  */
 void app_eth_config_get_default(struct app_eth_config *cfg);
 

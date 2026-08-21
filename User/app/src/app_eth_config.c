@@ -36,10 +36,42 @@ static struct app_eth_status s_status;
 static UCHAR s_inited = NX_FALSE;
 
 /**
+ * @brief  根据芯片 96 位唯一 ID 生成本地管理的单播 MAC 地址
+ * @param  mac 输出的 6 字节 MAC 地址
+ */
+static void mac_generate_from_uid(uint8_t mac[6])
+{
+    const uint32_t uid[3] = {
+        HAL_GetUIDw0(),
+        HAL_GetUIDw1(),
+        HAL_GetUIDw2(),
+    };
+    uint64_t hash = 14695981039346656037ULL;
+    uint32_t i;
+    uint32_t j;
+
+    for (i = 0; i < 3U; ++i) {
+        for (j = 0; j < 4U; ++j) {
+            hash ^= (uint8_t)(uid[i] >> (j * 8U));
+            hash *= 1099511628211ULL;
+        }
+    }
+
+    mac[0] = (uint8_t)(hash >> 40U);
+    mac[1] = (uint8_t)(hash >> 32U);
+    mac[2] = (uint8_t)(hash >> 24U);
+    mac[3] = (uint8_t)(hash >> 16U);
+    mac[4] = (uint8_t)(hash >> 8U);
+    mac[5] = (uint8_t)hash;
+
+    mac[0] = (mac[0] & 0xFCU) | 0x02U;
+}
+
+/**
  * @brief  把内置默认 cfg 填到 *cfg
  * @param  cfg 待填充的 cfg 结构体；NX_NULL 时直接返回
  * @note   默认 DHCP 启用，静态回退 192.168.2.233/24 gw=.1，DNS 8.8.8.8/8.8.4.4，
- *         MAC OUI 00:80:E1（ST 分配）
+ *         MAC 根据芯片唯一 ID 生成
  */
 void app_eth_config_get_default(struct app_eth_config *cfg)
 {
@@ -60,13 +92,7 @@ void app_eth_config_get_default(struct app_eth_config *cfg)
     cfg->dns1 = IP_ADDRESS(8, 8, 8, 8);
     cfg->dns2 = IP_ADDRESS(8, 8, 4, 4);
 
-    /* 默认 MAC（OUI 00:80:E1 是 STMicroelectronics 的） */
-    cfg->mac[0] = 0x00;
-    cfg->mac[1] = 0x80;
-    cfg->mac[2] = 0xE1;
-    cfg->mac[3] = 0x00;
-    cfg->mac[4] = 0x00;
-    cfg->mac[5] = 0x00;
+    mac_generate_from_uid(cfg->mac);
 
     /* crc32 字段暂不计算，等加 flash 持久化时再补 */
 }
