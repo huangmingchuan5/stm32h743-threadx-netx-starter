@@ -83,12 +83,12 @@ void app_eth_config_get_default(struct app_eth_config *cfg)
     cfg->magic = APP_ETH_CONFIG_MAGIC;
     cfg->version = APP_ETH_CONFIG_VERSION;
 
-    cfg->dhcp_enable = 1;
+    cfg->dhcp_enable = 0;
     cfg->dhcp_timeout_ms = APP_ETH_DHCP_TIMEOUT_DEFAULT_MS;
 
-    cfg->ip = IP_ADDRESS(192, 168, 2, 233);
+    cfg->ip = IP_ADDRESS(192, 168, 31, 31);
     cfg->mask = 0xFFFFFF00UL;
-    cfg->gateway = IP_ADDRESS(192, 168, 2, 1);
+    cfg->gateway = IP_ADDRESS(192, 168, 31, 1);
     cfg->dns1 = IP_ADDRESS(8, 8, 8, 8);
     cfg->dns2 = IP_ADDRESS(8, 8, 4, 4);
 
