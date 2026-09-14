@@ -54,29 +54,26 @@ void bsp_eth(void)
     __HAL_RCC_GPIOC_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
     __HAL_RCC_GPIOB_CLK_ENABLE();
+    __HAL_RCC_GPIOG_CLK_ENABLE();
 
-    /* Keep the PHY in reset, then release nRST through PC0. */
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
-    GPIO_InitStruct.Pin = GPIO_PIN_0;
-    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-    HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
-
-    tx_thread_sleep(10U);
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);
+    /*
+     * 野火 H743X/H750X 底板上 LAN8720A 的 nRST（pin 15）直接接 MCU 的 NRST，
+     * 软件无法单独控制 PHY 复位，上电时两者已经一起复位。这里只等 PHY 内部
+     * 复位完成、SMI 可访问；LAN8720A 复位释放后需要约 25 ms。
+     */
     tx_thread_sleep(50U);
 
     /**ETH GPIO Configuration
-    PC1     ------> ETH_MDC
-    PA1     ------> ETH_REF_CLK
-    PA2     ------> ETH_MDIO
-    PA7     ------> ETH_CRS_DV
-    PC4     ------> ETH_RXD0
-    PC5     ------> ETH_RXD1
-    PB11     ------> ETH_TX_EN
-    PB12     ------> ETH_TXD0
-    PB13     ------> ETH_TXD1
+     * 野火_H743X_H750X_底板_V1.0_原理图 第 9 页，U16 = LAN8720A
+    PC1     ------> ETH_MDC           (PHY pin 13)
+    PA1     ------> ETH_REF_CLK       (PHY pin 14, NINT/REFCLKO 输出 50 MHz)
+    PA2     ------> ETH_MDIO          (PHY pin 12)
+    PA7     ------> ETH_CRS_DV        (PHY pin 11, CSR_DV/MODE2)
+    PC4     ------> ETH_RXD0          (PHY pin 8,  RXD0/MODE0)
+    PC5     ------> ETH_RXD1          (PHY pin 7,  RXD1/MODE1)
+    PB11    ------> ETH_TX_EN         (PHY pin 16)
+    PG13    ------> ETH_TXD0          (PHY pin 17)
+    PG12    ------> ETH_TXD1          (PHY pin 18)
     */
     GPIO_InitStruct.Pin = GPIO_PIN_1 | GPIO_PIN_4 | GPIO_PIN_5;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
@@ -92,12 +89,19 @@ void bsp_eth(void)
     GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
     HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    GPIO_InitStruct.Pin = GPIO_PIN_11 | GPIO_PIN_12 | GPIO_PIN_13;
+    GPIO_InitStruct.Pin = GPIO_PIN_11;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
     GPIO_InitStruct.Pull = GPIO_NOPULL;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
     GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_12 | GPIO_PIN_13;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    GPIO_InitStruct.Alternate = GPIO_AF11_ETH;
+    HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
     static uint8_t MACAddr[6];
 

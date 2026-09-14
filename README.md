@@ -1,6 +1,6 @@
-# stm32h723zg_threadx_netx
+# stm32h743xi_threadx_netx
 
-STM32H723ZG + ThreadX + NetX Duo 的以太网脚手架工程，包含独立 Boot/App、组合固件、
+STM32H743XIH6 + ThreadX + NetX Duo 的以太网脚手架工程，包含独立 Boot/App、组合固件、
 DHCP/静态 IP 管理、链路状态机，以及 TCP Client/Server Echo 示例。
 
 ## 1. 拉取代码
@@ -27,8 +27,9 @@ ls Middlewares/threadx/common/src
 ls Middlewares/netxduo/common/src
 ```
 
-如果目录为空，先检查内网 `gitlab.hanliql.com:2083` 的访问权限和 Git 凭据，不要在缺少
-submodule 的情况下继续编译。
+如果目录为空，检查网络和 Git 凭据。submodule 指向的是公开上游
+（`github.com/eclipse-threadx/threadx` 与 `github.com/eclipse-threadx/netxduo`），
+不需要内网权限。不要在缺少 submodule 的情况下继续编译。
 
 ## 2. 说明
 
@@ -38,9 +39,9 @@ submodule 的情况下继续编译。
 
 **已经就绪：**
 
-- 128 KiB Boot + 896 KiB App 的双镜像布局，Boot 校验 App 向量表后跳转
+- 128 KiB Boot + 1920 KiB App 的双镜像布局，Boot 校验 App 向量表后跳转
 - 自动生成 `boot`、`app` 和 Boot+App 组合固件
-- STM32H723 Ethernet MAC + LAN8742 PHY 的 RMII 接入
+- STM32H743 Ethernet MAC + LAN8720A PHY 的 RMII 接入
 - H7 I-Cache/D-Cache 和 MPU 配置，ETH 描述符、NetX packet pool 放在非缓存区
 - NetX Duo IPv4、ARP、ICMP、UDP、TCP 和 DHCP Client
 - DHCP 超时回退静态 IP，运行时区分 DHCP / STATIC / DHCP_FALLBACK 来源
@@ -62,9 +63,9 @@ submodule 的情况下继续编译。
 
 | 项 | 当前配置 |
 |---|---|
-| MCU | STM32H723ZG，Cortex-M7，1 MiB Flash、560 KiB RAM |
-| 时钟 | 25 MHz HSE，SYSCLK 550 MHz，HCLK 275 MHz |
-| PHY | LAN8742 系列 10/100M PHY，RMII，MDIO 地址启动时自动扫描 0~31 |
+| MCU | STM32H743XIH6，Cortex-M7，2 MiB Flash、1 MiB RAM |
+| 时钟 | 25 MHz HSE，SYSCLK 480 MHz，HCLK 240 MHz，VOS0 + overdrive |
+| PHY | LAN8720A 10/100M PHY，RMII，MDIO 地址启动时自动扫描 0~31 |
 | RTOS | ThreadX，git submodule，用户裁剪配置在 `User/threadx/tx_user.h` |
 | 网络栈 | NetX Duo，git submodule，用户裁剪配置在 `User/netxduo/nx_user.h` |
 | 工具链 | CMake ≥ 3.22、Ninja、GNU Arm Embedded Toolchain |
@@ -73,19 +74,26 @@ submodule 的情况下继续编译。
 
 Ethernet 使用 RMII，当前板级引脚如下：
 
-| 信号 | 引脚 |
-|---|---|
-| PHY nRST | PC0 |
-| ETH_MDC | PC1 |
-| ETH_REF_CLK | PA1 |
-| ETH_MDIO | PA2 |
-| ETH_CRS_DV | PA7 |
-| ETH_RXD0 / ETH_RXD1 | PC4 / PC5 |
-| ETH_TX_EN | PB11 |
-| ETH_TXD0 / ETH_TXD1 | PB12 / PB13 |
+引脚按野火_H743X_H750X_底板_V1.0_原理图第 9 页（U16 = LAN8720A）确定：
 
-PHY 复位释放后，驱动通过 MDIO 扫描地址并读取 PHY ID；地址和协商出的速率/双工状态会打印到
-`Netx_Terminal`。
+| 信号 | 引脚 | LAN8720A 引脚 |
+|---|---|---|
+| PHY nRST | 与 MCU NRST 共用 | 15 |
+| ETH_MDC | PC1 | 13 |
+| ETH_REF_CLK | PA1 | 14（NINT/REFCLKO，PHY 输出 50 MHz） |
+| ETH_MDIO | PA2 | 12 |
+| ETH_CRS_DV | PA7 | 11 |
+| ETH_RXD0 / ETH_RXD1 | PC4 / PC5 | 8 / 7 |
+| ETH_TX_EN | PB11 | 16 |
+| ETH_TXD0 / ETH_TXD1 | PG13 / PG12 | 17 / 18 |
+
+PHY 的 nRST 直接接 MCU 的 NRST，上电时两者一起复位，软件无法单独复位 PHY，因此代码在
+使能 GPIO 后先等 50 ms 再访问 SMI。之后驱动通过 MDIO 扫描地址并读取 PHY ID；地址和协商出的
+速率/双工状态会打印到 `Netx_Terminal`。
+
+> `RXER/PHYAD0`（pin 10）在板上未连接，靠芯片内部下拉，所以 PHY 地址固定为 0。
+> `RXD0/RXD1/CRS_DV` 同时是 MODE0/MODE1/MODE2 的锁存脚，模式由 LAN8720A 内部上拉决定
+> （all capable auto-negotiation），板上没有额外上下拉电阻。
 
 ## 4. 目录结构
 
@@ -122,12 +130,12 @@ User/
 
 cmake/
 ├── gcc-arm-none-eabi.cmake      # GNU Arm 工具链
-├── STM32H723xG_flash.ld         # Boot/App 共用、地址参数化链接脚本
+├── STM32H743xI_flash.ld         # Boot/App 共用、地址参数化链接脚本
 ├── firmware_container.*         # 组合 Boot/App 固件
 ├── user_boot.cmake              # Boot 源文件和分区
 ├── user_app.cmake               # App 源文件和分区
 ├── threadx.cmake / netxduo.cmake
-└── startup_stm32h723xx.s
+└── startup_stm32h743xx.s
 
 Drivers/                         # STM32H7 HAL、CMSIS、CMSIS-DSP/NN
 Middlewares/                     # ThreadX、NetX Duo、SEGGER RTT
@@ -153,7 +161,7 @@ cmake --build --preset Debug
 |---|---|---|
 | `boot.elf/.hex/.bin` | 独立 Boot | `0x08000000` |
 | `app.elf/.hex/.bin` | 独立 App | `0x08020000` |
-| `stm32h723zg_threadx_netx.elf/.hex/.bin` | Boot + App 组合固件 | `0x08000000` |
+| `stm32h743xi_threadx_netx.elf/.hex/.bin` | Boot + App 组合固件 | `0x08000000` |
 | `boot.map` / `app.map` | 各镜像链接映射 | — |
 | `compile_commands.json` | IDE/clangd 索引数据库 | — |
 
@@ -169,7 +177,9 @@ cmake --build cmake/build/Debug --target boot
 | 区域 | 起始地址 | 长度 | 说明 |
 |---|---:|---:|---|
 | Boot | `0x08000000` | `0x00020000`（128 KiB） | 复位入口、App 合法性检查和跳转 |
-| App | `0x08020000` | `0x000E0000`（896 KiB） | ThreadX + NetX Duo 应用 |
+| App | `0x08020000` | `0x001E0000`（1920 KiB） | ThreadX + NetX Duo 应用 |
+
+STM32H743XIH6 有 2 MiB Flash，App 分区因此从 896 KiB 扩到 1920 KiB 吃满整片，结束于 `0x08200000`。
 
 推荐直接烧录组合固件：
 
@@ -194,15 +204,15 @@ Boot 只检查两项：
 仓库不附带 `.uvprojx`。如需建立 Keil 工程，应以 CMake 文件中的源文件和宏为权威来源，并分别建立
 Boot、App 两个 target：
 
-1. MCU 选择 `STM32H723ZGTx`，C 标准使用 C11。
+1. MCU 选择 `STM32H743XIH6`，C 标准使用 C11。
 2. Boot IROM 起点/长度设置为 `0x08000000 / 0x00020000`。
-3. App IROM 起点/长度设置为 `0x08020000 / 0x000E0000`。
+3. App IROM 起点/长度设置为 `0x08020000 / 0x001E0000`。
 4. App 定义 `USER_VECT_TAB_ADDRESS` 和 `VECT_TAB_OFFSET=0x00020000U`。
 5. ThreadX 使用 `ports/cortex_m7/ac6`，不要混用 GNU 移植层。
 6. NetX Duo 加入 `common/src` 和 DHCP addon，并使用 `User/netxduo/nx_user.h`。
 7. Scatter file 需要复现链接脚本中的 DTCM、非缓存 AXI SRAM 和 ETH 描述符布局。
 
-尤其不能把 GNU ld 的 `STM32H723xG_flash.ld` 直接当作 Keil scatter file 使用。新增或删除源文件时，
+尤其不能把 GNU ld 的 `STM32H743xI_flash.ld` 直接当作 Keil scatter file 使用。新增或删除源文件时，
 CMake 与 Keil 工程分组也必须同步维护。
 
 ### 5.4 RTT 调试输出
@@ -244,7 +254,7 @@ MCU Reset
       → VTOR = 0x08020000，恢复特权 MSP 模式
       → 跳转 App Reset_Handler
         → User/main.c: main()
-          → MPU_Config + I/D Cache + HAL + 550 MHz 时钟 + RTT
+          → MPU_Config + I/D Cache + HAL + 480 MHz 时钟 + RTT
           → tx_kernel_enter()
 ```
 
@@ -256,11 +266,18 @@ Boot 和 App 使用同一份参数化链接脚本，但由 CMake 分别注入 Fl
 STM32H7 开启 D-Cache 后，CPU Cache 与 ETH DMA 不能直接共享普通缓存内存，否则会出现“CPU 看到了、
 DMA 没看到”或相反的隐蔽故障。本工程通过 MPU 和链接脚本划分两块非缓存网络内存：
 
-| 区域 | 地址/长度 | 放置内容 |
-|---|---|---|
-| `RAM_D1_NOCACHE` | `0x24000000` / 64 KiB | NetX packet pool（`.NetXPoolSection`） |
-| `RAM_D2` | `0x30000000` / 32 KiB | ETH RX/TX DMA 描述符 |
-| DTCM | `0x20000000` / 128 KiB | 普通 `.data/.bss`、线程栈、ThreadX 对象 |
+| 区域 | 地址/长度 | MPU 属性 | 放置内容 |
+|---|---|---|---|
+| `RAM_D1_NOCACHE` | `0x24000000` / 64 KiB | region 1，非缓存 | NetX packet pool（`.NetXPoolSection`） |
+| `RAM_D2` | `0x30000000` / 288 KiB | **仅前 32 KiB** 为 region 0 非缓存 | ETH RX/TX DMA 描述符（在 `0x30000000` 起） |
+| `RAM_D1` | `0x24010000` / 448 KiB | 默认可缓存 | 预留，当前未使用 |
+| `RAM_D3` | `0x38000000` / 64 KiB | 默认可缓存 | 预留，当前未使用 |
+| DTCM | `0x20000000` / 128 KiB | 默认可缓存 | 普通 `.data/.bss`、线程栈、ThreadX 对象 |
+
+`RAM_D2` 在链接脚本里按芯片真实容量声明为 288 KiB，但 MPU region 0 只覆盖前 32 KiB
+（MPU 长度只能是 2 的幂，288 KiB 无法用一个 region 表达）。ETH 描述符放在最前面，所以是安全的；
+**但往 `0x30008000` 之后放 DMA buffer 时它是可缓存的**，必须自己维护 Cache clean/invalidate，
+或者同时新增 MPU region。
 
 `MPU_Config()` 必须在启用 D-Cache 前执行。不要随意删掉 MPU region、section 属性或 32/128 字节对齐；
 新增 DMA buffer 时也应放入合适的非缓存区域，或者显式维护 Cache clean/invalidate。
@@ -319,7 +336,7 @@ link UP 时，检查线程还会扫描 HAL ETH 的 RX 描述符，为之前因 p
 | 静态/回退 IP | `192.168.2.233/24` |
 | 网关 | `192.168.2.1` |
 | DNS | `8.8.8.8`、`8.8.4.4` |
-| MAC | 由 STM32H723 96 位 UID 生成 |
+| MAC | 由 STM32H743 96 位 UID 生成 |
 
 静态字段有两种用途：
 
@@ -499,14 +516,20 @@ nx_ip_status_check(&ip,
 
 ### 9.1 当前 PHY 结构
 
-当前使用 ST LAN8742 组件驱动：
+当前使用 ST LAN8742 组件驱动来驱动板上的 LAN8720A：
 
 - `User/dev/lan8742/`：ST 提供的 LAN8742 寄存器和状态机实现。
 - `User/netxduo/lan8720/nx_stm32_phy_driver.c`：NetX ETH 驱动要求的 PHY 适配接口。
-- `User/bsp/src/bsp_eth.c`：RMII GPIO、PC0 PHY 复位、ETH HAL 和中断。
+- `User/bsp/src/bsp_eth.c`：RMII GPIO、PHY 就绪延时、ETH HAL 和中断。
 
-目录名保留为 `lan8720`，但实际组件和日志以 LAN8742 为准。PHY 初始化会扫描 0~31 地址，并用
-Special Mode Register 中的地址字段确认设备，不在上层硬编码固定 MDIO 地址。
+目录名保留为 `lan8720`，实际组件和日志仍以 LAN8742 命名，这是历史原因，不影响功能：
+**LAN8720A 与 LAN8742A 的厂商寄存器布局一致**，PHY 地址都镜像在 0x12 寄存器（Special Modes
+Register）的低 5 位，所以同一套代码对两者都成立。PHY 初始化会扫描 0~31 地址，并用该地址字段
+确认设备，不在上层硬编码固定 MDIO 地址。
+
+板上 `RXER/PHYAD0` 未连接（内部下拉），PHY 地址固定为 0。上板后可看 `Netx_Terminal` 的
+`[phy] init ok: addr=0, ID1=0x0007, ID2=0xC0F1` —— LAN8720A 的 ID 是 `0x0007/0xC0F1`，
+LAN8742A 则是 `0x0007/0xC130`，用 ID2 可以区分实际焊的是哪一颗。
 
 ### 9.2 PHY 适配接口
 
@@ -531,7 +554,7 @@ nx_eth_phy_handle_t nx_eth_phy_get_handle(void);
 5. 核对 RMII/MII 模式、PHY nRST、REF_CLK、MDIO 地址和协商速率。
 6. 使用 Keil 时同步修改工程分组和 include path。
 
-更换为千兆 PHY 不代表 STM32H723 内置 MAC 自动支持千兆；必须以 MCU Ethernet MAC、板级接口和
+更换为千兆 PHY 不代表 STM32H743 内置 MAC 自动支持千兆；必须以 MCU Ethernet MAC、板级接口和
 PHY 工作模式的共同能力为准。
 
 ## 10. User/ 代码来源

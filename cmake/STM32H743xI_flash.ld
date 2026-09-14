@@ -6,8 +6,8 @@
 **
 **  Author		: STM32CubeMX
 **
-**  Abstract    : Linker script for STM32H723ZGTx series
-**                1024Kbytes FLASH and 560Kbytes RAM
+**  Abstract    : Linker script for STM32H743XIHx series
+**                2048Kbytes FLASH and 1056Kbytes RAM
 **
 **                Set heap size, stack size and stack location according
 **                to application requirements.
@@ -56,16 +56,16 @@ ENTRY(Reset_Handler)
 PROVIDE(_vectors = g_pfnVectors);
 
 __flash_region_origin__ = DEFINED(__flash_region_origin__) ? __flash_region_origin__ : 0x08000000;
-__flash_region_length__ = DEFINED(__flash_region_length__) ? __flash_region_length__ : 1024K;
+__flash_region_length__ = DEFINED(__flash_region_length__) ? __flash_region_length__ : 2048K;
 
 /* Specify the memory areas */
 MEMORY
 {
 DTCMRAM (xrw)          : ORIGIN = 0x20000000, LENGTH = 128K
 RAM_D1_NOCACHE (xrw)   : ORIGIN = 0x24000000, LENGTH = 64K
-RAM_D1 (xrw)           : ORIGIN = 0x24010000, LENGTH = 256K
-RAM_D2 (xrw)           : ORIGIN = 0x30000000, LENGTH = 32K
-RAM_D3 (xrw)           : ORIGIN = 0x38000000, LENGTH = 16K
+RAM_D1 (xrw)           : ORIGIN = 0x24010000, LENGTH = 448K
+RAM_D2 (xrw)           : ORIGIN = 0x30000000, LENGTH = 288K
+RAM_D3 (xrw)           : ORIGIN = 0x38000000, LENGTH = 64K
 ITCMRAM (xrw)          : ORIGIN = 0x00000000, LENGTH = 64K
 FLASH (rx)             : ORIGIN = __flash_region_origin__, LENGTH = __flash_region_length__
 }
@@ -159,6 +159,13 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
+  /*
+   * The ETH DMA descriptors must stay inside the 32 KiB window that
+   * MPU_Config() marks non-cacheable (0x30000000..0x30008000). RAM_D2 is
+   * declared at its full 288 KiB, but only that first window is covered by
+   * an MPU region; anything placed past 0x30008000 is cacheable and needs
+   * explicit cache maintenance before/after DMA.
+   */
   .eth_rx_descriptors (NOLOAD) :
   {
     . = ALIGN(128);

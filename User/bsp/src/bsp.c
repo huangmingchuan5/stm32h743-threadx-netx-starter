@@ -56,6 +56,8 @@ void SystemClock_Config(void)
     HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
 
     /** Configure the main internal regulator output voltage
+    * 480 MHz 必须用 VOS0。H743 上 VOS0 走 SYSCFG->PWRCR.ODEN overdrive 路径，
+    * 要求 SYSCFG 时钟已开 —— HAL_MspInit() 里已经使能，且 HAL_Init() 在本函数之前调用。
     */
     __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE0);
 
@@ -69,12 +71,17 @@ void SystemClock_Config(void)
     RCC_OscInitStruct.HSEState = RCC_HSE_ON;
     RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
     RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-    RCC_OscInitStruct.PLL.PLLM = 2;
-    RCC_OscInitStruct.PLL.PLLN = 44;
+    /*
+     * STM32H743 SYSCLK 上限 480 MHz（H723 是 550）。
+     * 25 MHz HSE / PLLM=5 = 5 MHz 参考，× PLLN=96 = 480 MHz VCO，/ PLLP=1 = 480 MHz SYSCLK。
+     * 参考频率 5 MHz 落在 4~8 MHz 区间，所以 PLLRGE 用 VCIRANGE_2（原来是 12.5 MHz 的 VCIRANGE_3）。
+     */
+    RCC_OscInitStruct.PLL.PLLM = 5;
+    RCC_OscInitStruct.PLL.PLLN = 96;
     RCC_OscInitStruct.PLL.PLLP = 1;
     RCC_OscInitStruct.PLL.PLLQ = 2;
     RCC_OscInitStruct.PLL.PLLR = 2;
-    RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_3;
+    RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_2;
     RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
     RCC_OscInitStruct.PLL.PLLFRACN = 0;
     HAL_RCC_OscConfig(&RCC_OscInitStruct);
@@ -93,7 +100,9 @@ void SystemClock_Config(void)
     RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2;
     RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
 
-    HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_3);
+    /* HCLK = 480 / 2 = 240 MHz，正好是 H743 的 AXI/AHB 上限；APBx = 120 MHz。
+     * VOS0 + 240 MHz HCLK 对应 4 个 Flash 等待周期。 */
+    HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4);
 }
 
 /**

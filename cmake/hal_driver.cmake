@@ -1,7 +1,7 @@
 set(HAL_DRIVER_DEFINITIONS
         USE_FULL_LL_DRIVER
         USE_HAL_DRIVER
-        STM32H723xx
+        STM32H743xx
         $<$<CONFIG:Debug>:DEBUG>
 )
 
@@ -34,10 +34,10 @@ add_library(hal_drivers STATIC)
 target_sources(hal_drivers PRIVATE ${HAL_DRIVER_SOURCES})
 target_link_libraries(hal_drivers PUBLIC hal_config)
 
-# Configure the STM32H723 platform sources and memory layout for a firmware target.
+# Configure the STM32H743 platform sources and memory layout for a firmware target.
 function(configure_hal_firmware target flash_origin flash_length vector_offset)
     target_sources(${target} PRIVATE
-            ${CMAKE_SOURCE_DIR}/cmake/startup_stm32h723xx.s
+            ${CMAKE_SOURCE_DIR}/cmake/startup_stm32h743xx.s
             ${CMAKE_SOURCE_DIR}/User/core/system_stm32h7xx.c
             ${HAL_SYSTEM_SOURCES}
     )
@@ -55,7 +55,7 @@ function(configure_hal_firmware target flash_origin flash_length vector_offset)
 
     target_link_options(${target} PRIVATE
             ${TARGET_OPTIONS}
-            -T${CMAKE_SOURCE_DIR}/cmake/STM32H723xG_flash.ld
+            -T${CMAKE_SOURCE_DIR}/cmake/STM32H743xI_flash.ld
             --specs=nano.specs
             -Wl,--defsym=__flash_region_origin__=${flash_origin}
             -Wl,--defsym=__flash_region_length__=${flash_length}
