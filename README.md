@@ -14,7 +14,7 @@ submodule，因此不要使用 `--recursive`。
 ```bash
 # 第一步：拉取主仓库
 git clone <本仓库地址>
-cd stm32h723zg-threadx-netx
+cd STM32H743-ThreadX-NetXDuo_Demo
 
 # 第二步：只初始化当前仓库声明的 submodule
 git submodule update --init

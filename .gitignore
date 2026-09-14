@@ -1,8 +1,16 @@
 # CLion
 .idea/
 
-# VS Code
-.vscode/
+# VS Code：settings.json 含本机工具链路径，随机器而异；launch.json 是可复用的调试配置，随仓库分发。
+.vscode/*
+!.vscode/launch.json
+
+# STM32Cube / IDE 本地环境状态（设备、工具链 bundle 版本等，因机器而异）
+.settings/
 
 # CMake
 /cmake/build/
+
+# 板级参考资料：野火原理图为第三方版权文档，不随仓库分发。
+# 本地需要时另行获取，放进仓库根目录即可（已被本规则忽略）。
+*.pdf
