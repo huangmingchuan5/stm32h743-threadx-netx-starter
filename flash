@@ -1,0 +1,40 @@
+# ============================================================
+# OpenOCD 烧录配置  ——  STM32H743XIHx
+#
+# 用法：必须在工程根目录执行（elf 用的是相对路径）
+#       openocd -f flash
+#       或直接  ./run.sh flash
+#
+# 若在别的目录执行，OpenOCD 会报 Can't find flash —— 那是找不到本文件，
+# 不是语法错误。也可用绝对路径指定配置：
+#   openocd -f "C:/path/to/project/flash"
+# ============================================================
+
+# ---------- 1. 调试器 ----------
+# 当前使用 DAPLink / CMSIS-DAP
+source [find interface/cmsis-dap.cfg]
+
+# 若改用 ST-Link：注释掉上面一行，取消下面一行注释
+# source [find interface/stlink.cfg]
+
+# ---------- 2. 目标芯片 ----------
+# H743 属于 H7 系列，不是 stm32f4x.cfg
+source [find target/stm32h7x.cfg]
+# 若芯片选项字节为双 Bank 且报 flash bank 错误，改用下行配置
+# source [find target/stm32h7x_dual_bank.cfg]
+
+# ---------- 3. 速度 ----------
+# 必须写在 source target 之后：target cfg 内部已写死 adapter speed 1800，
+# 写在前面的设置会被静默覆盖。
+adapter speed 1800
+# 连接不稳（长排线/接触不良）时降到 500：
+# adapter speed 500
+
+# ---------- 4. 烧录 ----------
+# 产物名自动跟随工程目录名（对应 CMakeLists.txt 的 CMAKE_PROJECT_NAME），
+# 复制模板到新目录后无需修改本文件。
+# 相对路径基于执行 openocd 时的当前目录，因此必须在工程根目录运行
+program build/[file tail [pwd]].elf verify reset exit
+
+# 烧录 bin（bin 无段信息，必须指定起始地址）
+# program build/[file tail [pwd]].bin 0x08000000 verify reset exit

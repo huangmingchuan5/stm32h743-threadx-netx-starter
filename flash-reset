@@ -1,0 +1,21 @@
+# ============================================================
+# 备用烧录配置：connect under reset
+# 适用场景：芯片被锁 / 程序把 SWD 引脚复用成 GPIO / 一上电就进低功耗
+#
+# 用法（同样必须在工程根目录）：
+#   openocd -f flash-reset
+#
+# 若仍失败，改用“手动”方式：按住板子 RESET 键 → 执行命令 → 看到
+# "Connecting under reset" 后松开 RESET。
+# ============================================================
+
+source [find interface/cmsis-dap.cfg]
+transport select swd
+
+source [find target/stm32h7x.cfg]
+
+# 必须放在 source target 之后，否则会被 stm32h7x.cfg 里的设置覆盖
+adapter speed 500
+reset_config srst_only srst_nogate connect_assert_srst
+
+program build/[file tail [pwd]].elf verify reset exit

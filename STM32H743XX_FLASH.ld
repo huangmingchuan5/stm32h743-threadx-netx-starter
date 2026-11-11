@@ -52,30 +52,28 @@
 /* Entry Point */
 ENTRY(Reset_Handler)
 
-/* ThreadX low-level initialization uses this vector-table symbol. */
-PROVIDE(_vectors = g_pfnVectors);
-
-__flash_region_origin__ = DEFINED(__flash_region_origin__) ? __flash_region_origin__ : 0x08000000;
-__flash_region_length__ = DEFINED(__flash_region_length__) ? __flash_region_length__ : 2048K;
-
 /* Specify the memory areas */
 MEMORY
 {
-DTCMRAM (xrw)          : ORIGIN = 0x20000000, LENGTH = 128K
-RAM_D1_NOCACHE (xrw)   : ORIGIN = 0x24000000, LENGTH = 64K
-RAM_D1 (xrw)           : ORIGIN = 0x24010000, LENGTH = 448K
-RAM_D2 (xrw)           : ORIGIN = 0x30000000, LENGTH = 288K
-RAM_D3 (xrw)           : ORIGIN = 0x38000000, LENGTH = 64K
-ITCMRAM (xrw)          : ORIGIN = 0x00000000, LENGTH = 64K
-FLASH (rx)             : ORIGIN = __flash_region_origin__, LENGTH = __flash_region_length__
+DTCMRAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
+RAM (xrw)      : ORIGIN = 0x24000000, LENGTH = 512K
+RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 288K
+RAM_D3 (xrw)      : ORIGIN = 0x38000000, LENGTH = 64K
+ITCMRAM (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
+FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 2048K
 }
 
-/* Highest address of the user mode stack */
-_estack = ORIGIN(DTCMRAM) + LENGTH(DTCMRAM);    /* end of RAM */
-_sstack = _estack - _Min_Stack_Size;
+/* ==========================================================================
+ * ThreadX 移植改动 #1：主 RAM 改为 AXI SRAM(0x24000000, 512K)
+ *   Keil 实际链接用的 output.sct 把全部 RW/ZI 放在 0x24000000，
+ *   且安富莱 MPU_Config() 把这块配置为 Write-back Cacheable。
+ *   512K 也更适合放 ThreadX 的任务栈/内存池（DTCM 只有 128K）。
+ *   _estack 必须与 .data/.bss/heap 同一块 RAM，否则 sysmem.c 的 _sbrk 会算错堆上限。
+ * ========================================================================== */
+_estack = ORIGIN(RAM) + LENGTH(RAM);    /* 0x24080000，AXI SRAM 顶端 */
 /* Generate a link error if heap and stack don't fit into RAM */
-_Min_Heap_Size = 0x200;      /* required amount of heap  */
-_Min_Stack_Size = 0x400; /* required amount of stack */
+_Min_Heap_Size  = 0x1000;    /* 4 KB newlib 堆 */
+_Min_Stack_Size = 0x1000;    /* 4 KB MSP / ThreadX 系统栈预留 */
 
 /* Define output sections */
 SECTIONS
@@ -84,6 +82,11 @@ SECTIONS
   .isr_vector :
   {
     . = ALIGN(4);
+    /* ThreadX 移植改动 #2：GNU 版 tx_initialize_low_level.S 用 _vectors
+     * 重设 SCB->VTOR 并读取初始 MSP；CMSIS 启动文件只提供 g_pfnVectors，
+     * 因此在链接脚本里补一个指向 .isr_vector 起始地址的符号，
+     * 而不是去修改 ThreadX 官方汇编（便于日后升级内核）。 */
+    PROVIDE ( _vectors = . );
     KEEP(*(.isr_vector)) /* Startup code */
     . = ALIGN(4);
   } >FLASH
@@ -159,36 +162,6 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  /*
-   * The ETH DMA descriptors must stay inside the 32 KiB window that
-   * MPU_Config() marks non-cacheable (0x30000000..0x30008000). RAM_D2 is
-   * declared at its full 288 KiB, but only that first window is covered by
-   * an MPU region; anything placed past 0x30008000 is cacheable and needs
-   * explicit cache maintenance before/after DMA.
-   */
-  .eth_rx_descriptors (NOLOAD) :
-  {
-    . = ALIGN(128);
-    KEEP(*(.RxDescripSection))
-    . = ALIGN(128);
-  } >RAM_D2
-
-  .eth_tx_descriptors (NOLOAD) :
-  {
-    KEEP(*(.TxDescripSection))
-    . = ALIGN(128);
-  } >RAM_D2
-
-  .netx_pool (NOLOAD) :
-  {
-    . = ALIGN(32);
-    KEEP(*(.NetXPoolSection))
-    . = ALIGN(32);
-  } >RAM_D1_NOCACHE
-
-  ASSERT(SIZEOF(.netx_pool) <= LENGTH(RAM_D1_NOCACHE),
-         "NetX packet pool exceeds the non-cacheable RAM_D1 region")
-
   /* used by the startup to initialize data */
   _sidata = LOADADDR(.data);
 
@@ -203,7 +176,7 @@ SECTIONS
     *(.RamFunc*)       /* .RamFunc* sections */
 
     . = ALIGN(4);
-  } >DTCMRAM AT> FLASH
+  } >RAM AT> FLASH
 
  /* Initialized TLS data section */
   .tdata : ALIGN(4)
@@ -213,7 +186,7 @@ SECTIONS
     _edata = .;        /* define a global symbol at data end */
     PROVIDE(__data_end = .);
     PROVIDE(__tdata_end = .);
-  } >DTCMRAM AT> FLASH
+  } >RAM AT> FLASH
 
   PROVIDE( __tdata_start = ADDR(.tdata) );
   PROVIDE( __tdata_size = __tdata_end - __tdata_start );
@@ -237,7 +210,7 @@ SECTIONS
     *(.tbss .tbss.*)
     . = ALIGN(4);
     PROVIDE( __tbss_end = . );
-  } >DTCMRAM
+  } >RAM
 
   PROVIDE( __tbss_start = ADDR(.tbss) );
   PROVIDE( __tbss_size = __tbss_end - __tbss_start );
@@ -261,40 +234,75 @@ SECTIONS
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
       PROVIDE( __bss_end = .);
-  } >DTCMRAM
+  } >RAM
   PROVIDE( __non_tls_bss_start = ADDR(.bss) );
+
+  /* ------------------------------------------------------------------
+   * DMA 缓冲区段
+   * DTCM(0x20000000) 是 CPU 私有 TCM，DMA1/DMA2 通过 AHB/AXI 访问不到，
+   * 若把 DMA 目的缓冲区放在 .bss（本脚本指向 DTCMRAM），DMA 写入无效，
+   * CPU 读回恒为 0。
+   * 这里单独开一段放到 D2 SRAM(0x30000000)，DMA 可正常访问。
+   * 用法： __IO uint16_t buf[2] __attribute__((section(".dma_buffer")));
+   * ------------------------------------------------------------------ */
+  .dma_buffer (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.dma_buffer)
+    *(.dma_buffer*)
+    . = ALIGN(4);
+  } >RAM_D2
+
 
   PROVIDE( __bss_start = __tbss_start );
   PROVIDE( __bss_size = __bss_end - __bss_start );
 
-  /* User heap section */
-  ._user_heap (NOLOAD) :
+  /* User_heap_stack section, used to check that there is enough RAM left */
+  ._user_heap_stack (NOLOAD) :
   {
     . = ALIGN(8);
     PROVIDE ( end = . );
     PROVIDE ( _end = . );
     . = . + _Min_Heap_Size;
-    . = ALIGN(8);
-  } >DTCMRAM
-
-  /* ThreadX application memory starts after the C runtime heap. */
-  ._threadx_heap (NOLOAD) :
-  {
-    . = ALIGN(8);
-    __RAM_segment_used_end__ = .;
-    . = . + 1K;
-    . = ALIGN(8);
-  } >DTCMRAM
-
-  /* User stack section */
-  ._user_stack (NOLOAD) :
-  {
-    . = ALIGN(8);
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
+  } >RAM
+
+  /* ------------------------------------------------------------------
+   * 可选高速/外设 RAM 段。默认 .data/.bss 全部在 AXI SRAM；
+   * 需要把热点数据放 DTCM，或把以太网/ADC 缓冲放 D2/D3 域时，
+   * 用 __attribute__((section(".dtcmram"))) 之类显式指定即可。
+   * ------------------------------------------------------------------ */
+  .dtcmram (NOLOAD) :
+  {
+    . = ALIGN(4);
+    _sdtcmram = .;
+    *(.dtcmram)
+    *(.dtcmram*)
+    . = ALIGN(4);
+    _edtcmram = .;
   } >DTCMRAM
 
+  .ram_d3 (NOLOAD) :
+  {
+    . = ALIGN(4);
+    *(.ram_d3)
+    *(.ram_d3*)
+    . = ALIGN(4);
+  } >RAM_D3
 
+  /* ==========================================================================
+   * ThreadX 移植改动 #3：__RAM_segment_used_end__
+   *   GNU 版 tx_initialize_low_level.S 把该符号 +4 作为
+   *   tx_application_define(first_unused_memory) 的起点。
+   *   这里在 newlib 堆/栈预留之后再留出 32KB，避免 ThreadX 的动态内存
+   *   与 malloc/MSP 栈打架。示例 main.c 用的是静态任务栈，不受影响；
+   *   若后续用 tx_byte_pool_create 等动态分配，可按需要调大余量。
+   * ========================================================================== */
+  PROVIDE ( __RAM_segment_used_end__ =
+            ADDR(._user_heap_stack) + SIZEOF(._user_heap_stack) + 0x8000 );
+  ASSERT ( __RAM_segment_used_end__ < ORIGIN(RAM) + LENGTH(RAM) - _Min_Stack_Size,
+           "AXI SRAM 剩余空间不足：请减小 _Min_Heap_Size 或 ThreadX 保留余量" )
 
   /* Remove information from the standard libraries */
   /DISCARD/ :

@@ -1,582 +1,260 @@
-# stm32h743xi_threadx_netx
+# STM32H743 + ThreadX + NetX Duo 例程（CMake 单镜像 · 初学者教程）
 
-STM32H743XIH6 + ThreadX + NetX Duo 的以太网脚手架工程，包含独立 Boot/App、组合固件、
-DHCP/静态 IP 管理、链路状态机，以及 TCP Client/Server Echo 示例。
+> 安富莱 V7 开发板（STM32H743XIHx）上运行的 **ThreadX 实时内核 + NetX Duo TCP/IP 协议栈** 示例。
+> 本工程改编自 `Cmake_threadX_Template`，把原工程里复杂的 **boot/app 双镜像 + 固件容器** 方案
+> 简化为**单镜像**，并把构建系统重写成模板那套「分层 OBJECT 库」结构，方便初学者理解和扩展。
 
-## 1. 拉取代码
+---
 
-ThreadX 和 NetX Duo 以 git submodule 方式引入（见 `.gitmodules`）。主仓库 clone 完成后，
-需要单独初始化这一层 submodule，否则会因为缺少 RTOS 和协议栈源码而无法编译。
+## 1. 这个工程能做什么
 
-本工程只依赖 `.gitmodules` 中列出的 ThreadX / NetX Duo，不需要递归拉取它们内部的其他
-submodule，因此不要使用 `--recursive`。
+- 板上千兆/百兆 PHY（V7 用 **LAN8742A**）通过 **DHCP** 自动获取 IP 地址；
+- 跑一个 **TCP echo 服务器 + 客户端** 示例（用网络调试助手连上去就能收发包）；
+- 用 ThreadX 创建多个任务，并通过 **SEGGER RTT** 周期性打印：任务栈使用情况、CPU 占用率；
+- 所有 `printf` 走 **RTT 虚拟串口**，不接 USB 转串口线也能在上位机看日志。
+
+> 关于「串口权限」：本工程把调试输出统一接到 SEGGER RTT（通过 SWD 把数据传到电脑），
+> 你不需要去碰 COM 口权限、不需要装 CH340 驱动，插上 ST-Link / DAPLink 即可。
+
+---
+
+## 2. 相比原工程改了什么（重要）
+
+| 项目 | 原工程 | 本教程工程 |
+| --- | --- | --- |
+| 镜像结构 | boot + app 双镜像 + 固件容器（`.S`/`.ld`/多个 cmake） | **单镜像**，一个 `*.elf` 直接烧 |
+| 构建系统 | CubeMX 生成的 `add_subdirectory` + 多个 `user_*.cmake` | 模板式 `cmake/*.cmake` 分层 |
+| ThreadX 链接 | 静态库 `.a` | **OBJECT 库**（见下面「坑」） |
+| 调试输出 | SEGGER RTT | 沿用 SEGGER RTT，文档补全 |
+
+### ⚠️ 一个让新手踩坑的移植要点：为什么必须用 OBJECT 库
+
+ThreadX 在 `tx_thread_schedule.S` 里定义了**强符号** `PendSV_Handler`，在
+`tx_initialize_low_level.S` 里定义了**强符号** `SysTick_Handler`，
+用来**覆盖** CMSIS 启动文件里的 `.weak` 空实现 —— 否则线程切换和 1kHz 系统节拍就丢了。
+
+如果用「静态库 `.a`」，链接器是**按需抽取**目标文件的：启动文件里已经用 `WEAK` 提供了
+`PendSV_Handler`，引用被满足了，链接器就不会去静态库里取 ThreadX 的那个目标文件，
+结果——**调度心跳静默消失，程序跑不起来**。
+
+用 **OBJECT 库**（`add_library(xxx OBJECT ...)`）则所有 `.o` 无条件参与链接，
+强符号自然覆盖弱符号。这就是模板和我这套 CMake 都坚持用 OBJECT 库的原因。
+
+---
+
+## 3. 环境准备
+
+需要以下工具（你机器上已经装好，路径在 `D:/Embedded_Toolchain/` 下）：
+
+| 工具 | 用途 | 本机路径示例 |
+| --- | --- | --- |
+| arm-none-eabi-gcc | 交叉编译器 | `D:/Embedded_Toolchain/arm-none-eabi-gcc/15.3.rel2/bin` |
+| CMake | 构建系统 | `D:/Embedded_Toolchain/cmake/4.4.5/bin`（≥ 3.22） |
+| Ninja | 构建后端 | `D:/Embedded_Toolchain/ninja/1.13.2` |
+| OpenOCD | 烧录 / 调试 | `D:/Embedded_Toolchain/xpack-openocd/0.12.0-7/...` |
+| J-Link RTT Viewer | 看 RTT 日志 | 单独安装（SEGGER 官网免费） |
+
+> 把上面三个 `bin` 目录加到系统 `PATH`，或在本工程目录打开已配置好的终端。
+> 验证：`arm-none-eabi-gcc --version`、`cmake --version`、`ninja --version` 都能打印版本号。
+
+**首次拉取源码**：本工程的 ThreadX / NetX Duo 是 Git 子模块，克隆后需初始化：
 
 ```bash
-# 第一步：拉取主仓库
-git clone <本仓库地址>
-cd STM32H743-ThreadX-NetXDuo_Demo
-
-# 第二步：只初始化当前仓库声明的 submodule
-git submodule update --init
+git submodule update --init --recursive
 ```
 
-确认下面两个目录中已经有源码：
+（`Middlewares/threadx`、`Middlewares/netxduo` 两个目录若为空，构建会找不到源文件。）
 
-```bash
-ls Middlewares/threadx/common/src
-ls Middlewares/netxduo/common/src
-```
+硬件：安富莱 V7 开发板、ST-Link 或 DAPLink 调试器、一根网线（接路由器/交换机，用于 DHCP）。
 
-如果目录为空，检查网络和 Git 凭据。submodule 指向的是公开上游
-（`github.com/eclipse-threadx/threadx` 与 `github.com/eclipse-threadx/netxduo`），
-不需要内网权限。不要在缺少 submodule 的情况下继续编译。
-
-## 2. 说明
-
-这是一套已经接通 STM32H7、ThreadX 和 NetX Duo 的网络基础工程，不是某个具体产品的成品应用。
-它把 Boot/App 分区、H7 Cache 一致性、ETH DMA、PHY、DHCP、链路管理和 TCP 示例等基础设施放在
-一起，适合继续增加设备协议、采集上报、远程控制等网络业务。
-
-**已经就绪：**
-
-- 128 KiB Boot + 1920 KiB App 的双镜像布局，Boot 校验 App 向量表后跳转
-- 自动生成 `boot`、`app` 和 Boot+App 组合固件
-- STM32H743 Ethernet MAC + LAN8720A PHY 的 RMII 接入
-- H7 I-Cache/D-Cache 和 MPU 配置，ETH 描述符、NetX packet pool 放在非缓存区
-- NetX Duo IPv4、ARP、ICMP、UDP、TCP 和 DHCP Client
-- DHCP 超时回退静态 IP，运行时区分 DHCP / STATIC / DHCP_FALLBACK 来源
-- link UP/DOWN 电平状态机、变化订阅 API 和 RX 描述符 buffer 兜底补给
-- 基于芯片 96 位 UID 生成稳定的本地管理单播 MAC
-- TCP Server Echo：监听 7777，最多 10 个并发连接
-- TCP Client Echo：连接固定目标，收到什么就原样回发，断线自动重连
-- SEGGER RTT 四终端日志分流、CPU 利用率和线程栈监控
-
-**暂未实现：**
-
-- 网络配置持久化；当前复位后重新使用内置默认配置
-- TLS、证书和业务层鉴权
-- 固件签名、版本管理、升级回滚；Boot 当前只校验 App 向量表是否合法
-- 具体产品协议；Echo 只是验证 TCP 收发的示例
-- CMake 烧录 target；工程生成标准 ELF/HEX/BIN，由调试器或烧录工具加载
-
-## 3. 硬件与软件依赖
-
-| 项 | 当前配置 |
-|---|---|
-| MCU | STM32H743XIH6，Cortex-M7，2 MiB Flash、1 MiB RAM |
-| 时钟 | 25 MHz HSE，SYSCLK 480 MHz，HCLK 240 MHz，VOS0 + overdrive |
-| PHY | LAN8720A 10/100M PHY，RMII，MDIO 地址启动时自动扫描 0~31 |
-| RTOS | ThreadX，git submodule，用户裁剪配置在 `User/threadx/tx_user.h` |
-| 网络栈 | NetX Duo，git submodule，用户裁剪配置在 `User/netxduo/nx_user.h` |
-| 工具链 | CMake ≥ 3.22、Ninja、GNU Arm Embedded Toolchain |
-| 编译参数 | `-mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard` |
-| 调试输出 | SEGGER J-Link + RTT Viewer |
-
-Ethernet 使用 RMII，当前板级引脚如下：
-
-引脚按野火_H743X_H750X_底板_V1.0_原理图第 9 页（U16 = LAN8720A）确定：
-
-| 信号 | 引脚 | LAN8720A 引脚 |
-|---|---|---|
-| PHY nRST | 与 MCU NRST 共用 | 15 |
-| ETH_MDC | PC1 | 13 |
-| ETH_REF_CLK | PA1 | 14（NINT/REFCLKO，PHY 输出 50 MHz） |
-| ETH_MDIO | PA2 | 12 |
-| ETH_CRS_DV | PA7 | 11 |
-| ETH_RXD0 / ETH_RXD1 | PC4 / PC5 | 8 / 7 |
-| ETH_TX_EN | PB11 | 16 |
-| ETH_TXD0 / ETH_TXD1 | PG13 / PG12 | 17 / 18 |
-
-PHY 的 nRST 直接接 MCU 的 NRST，上电时两者一起复位，软件无法单独复位 PHY，因此代码在
-使能 GPIO 后先等 50 ms 再访问 SMI。之后驱动通过 MDIO 扫描地址并读取 PHY ID；地址和协商出的
-速率/双工状态会打印到 `Netx_Terminal`。
-
-> `RXER/PHYAD0`（pin 10）在板上未连接，靠芯片内部下拉，所以 PHY 地址固定为 0。
-> `RXD0/RXD1/CRS_DV` 同时是 MODE0/MODE1/MODE2 的锁存脚，模式由 LAN8720A 内部上拉决定
-> （all capable auto-negotiation），板上没有额外上下拉电阻。
+---
 
 ## 4. 目录结构
 
-```text
-User/
-├── main.c                       # App 入口：系统初始化后进入 ThreadX
-├── boot/
-│   └── src/boot_main.c          # Boot：校验 App MSP/Reset_Handler 并跳转
-├── app/
-│   ├── inc/  src/
-│   ├── threadx_kernel.*         # ThreadX 引导、CPU/栈监控
-│   ├── threadx_task_manager.*   # 业务任务集中创建入口
-│   ├── threadx_printf.*         # RTT 多终端线程安全输出
-│   ├── app_eth.*                # NetX IP 实例和网络模块总入口
-│   ├── app_eth_config.*         # 网络 config/status 和异步 apply
-│   ├── app_eth_dhcp.*           # DHCP 控制、静态 IP 和 fallback
-│   ├── app_eth_link_check.*     # link 状态机、订阅 API、RX buffer 兜底
-│   ├── app_tcp_server_echo.*    # 多连接 TCP Server Echo
-│   └── app_tcp_client_echo.*    # 自动重连 TCP Client Echo
-├── bsp/
-│   ├── bsp.*                    # 时钟、MPU、Cache 和板级初始化
-│   ├── bsp_eth.*                # RMII GPIO、PHY 复位、ETH HAL、MAC 写入
-│   └── bsp_RTT_viewer.*         # SEGGER RTT 初始化
-├── core/                        # CMSIS/HAL 系统、中断、syscalls
-├── dev/lan8742/                 # ST LAN8742 组件驱动
-├── netxduo/
-│   ├── nx_stm32_eth_driver.*    # NetX ↔ STM32 HAL ETH 适配层
-│   ├── nx_stm32_eth_config.h    # NetX ETH 驱动配置
-│   ├── nx_user.h                # NetX Duo 用户裁剪配置
-│   └── lan8720/                 # 当前 LAN8742 PHY 适配层
-└── threadx/
-    ├── tx_user.h                # ThreadX 用户裁剪配置
-    └── tx_initialize_low_level.S
-
-cmake/
-├── gcc-arm-none-eabi.cmake      # GNU Arm 工具链
-├── STM32H743xI_flash.ld         # Boot/App 共用、地址参数化链接脚本
-├── firmware_container.*         # 组合 Boot/App 固件
-├── user_boot.cmake              # Boot 源文件和分区
-├── user_app.cmake               # App 源文件和分区
-├── threadx.cmake / netxduo.cmake
-└── startup_stm32h743xx.s
-
-Drivers/                         # STM32H7 HAL、CMSIS、CMSIS-DSP/NN
-Middlewares/                     # ThreadX、NetX Duo、SEGGER RTT
+```
+STM32H743-ThreadX-NetXDuo_Demo/
+├─ CMakeLists.txt            # 顶层构建：单可执行目标 + 后处理(hex/bin/size)
+├─ CMakePresets.json         # Debug / Release 预设，cmake --preset 直接用它
+├─ startup_stm32h743xx.s     # 中断向量表（.isr_vector）
+├─ STM32H743XX_FLASH.ld      # 链接脚本：AXI SRAM 作主 RAM，提供 _vectors / __RAM_segment_used_end__
+├─ cmake/
+│  ├─ gcc-arm-none-eabi.cmake  # 工具链：CPU/FPU/编译/链接公共选项
+│  ├─ threadx.cmake            # ThreadX → OBJECT 库（common/src + gnu port + 底层初始化）
+│  ├─ netxduo.cmake            # NetX Duo → OBJECT 库（common/src + gnu port）
+│  ├─ stm32h7.cmake            # STM32H7 HAL → OBJECT 库（全量 Src/*.c，排除 *_template.c）
+│  ├─ segger_rtt.cmake         # SEGGER RTT → OBJECT 库
+│  └─ bsp.cmake                # BSP 初始化 → OBJECT 库（bsp.c / bsp_RTT_viewer.c）
+├─ Drivers/                  # CMSIS + STM32H7xx HAL 驱动（对应模板的 Libraries/）
+├─ Middlewares/
+│  ├─ threadx/               # ★ git 子模块：ThreadX 源码
+│  ├─ netxduo/               # ★ git 子模块：NetX Duo 源码
+│  └─ SEGGER_RTT/            # RTT 源码
+└─ User/
+   ├─ main.c                 # 入口：System_Init → 挂起 HAL tick → tx_kernel_enter
+   ├─ core/                  # system_stm32h7xx.c / hal_msp / it / timebase_tim / syscalls / sysmem
+   ├─ bsp/                   # 板级支持：bsp.c（MPU/缓存/480MHz 时钟/RTT 初始化）、bsp_eth.c
+   ├─ app/                   # ThreadX 内核引导 + 多终端 printf + 网络应用
+   │   ├─ src/threadx_kernel.c        # 创建 Start/Stat/Idle 任务，统计 CPU 占用
+   │   ├─ src/threadx_printf.c        # 线程安全的多终端 printf（走 RTT）
+   │   ├─ src/threadx_task_manager.c  # AppTaskCreate：创建网络相关任务
+   │   ├─ src/app_eth*.c              # NetX IP / DHCP / Link 检查 / TCP echo
+   │   └─ inc/                       # 对应头文件
+   ├─ netxduo/               # nx_user.h（协议栈配置）+ STM32 以太网驱动 + PHY 驱动
+   ├─ dev/lan8742/           # LAN8742A PHY 驱动
+   └─ threadx/               # tx_user.h（内核配置）+ tx_initialize_low_level.S
 ```
 
-## 5. 编译 / 烧录 / 调试
+`Drivers/` 在本工程里等同于模板里的 `Libraries/`（CMSIS + HAL），只是名字沿用
+STM32CubeMX 的习惯，方便你以后直接把 CubeMX 生成的 HAL 丢进来。
 
-### 5.1 CMake（推荐）
+---
 
-工程使用 Ninja 和 `CMakePresets.json`，提供 `Debug` / `Release` 两套配置。
+## 5. 一键构建（`./run.sh`，与模板一致）
+
+沿用 `Cmake_threadX_Template` 的 `run.sh`，一条命令搞定构建与烧录：
 
 ```bash
-# 首次配置，或 CMake 文件发生变化后重新配置
-cmake --preset Debug
+./run.sh                  # Debug 全量构建（默认）
+./run.sh flash            # 构建后用 OpenOCD 烧录（= openocd -f flash）
+./run.sh clean            # 清空 build/ 后重新编译
+BUILD_TYPE=Release ./run.sh
+JOBS=2 ./run.sh           # 编译卡住时降低并行度（见下）
+```
 
-# 构建 Boot、App 和组合固件
+`run.sh` 在 `PATH` 里找不到 gcc / cmake / ninja / openocd 时，会自动回退到
+`D:/Embedded_Toolchain/...` 下的本机安装路径，无需手动配环境变量。
+
+> ⚠️ **如果编译卡住**（终端长时间不动、某个 `arm-none-eabi-gcc` 进程无进展），
+> 这是 mingw 在高并行度下偶发的进程派生死锁，**不是代码问题**。降低并行度即可：
+> ```bash
+> JOBS=2 ./run.sh
+> ```
+> 本工程默认 `JOBS=4`；`JOBS=2` 在 Debug / Release 下均已验证可稳定通过。
+
+等价的 CMake Presets 方式（备选）：
+
+```bash
+cmake --preset Debug
 cmake --build --preset Debug
 ```
 
-产物位于 `cmake/build/Debug/`：
+构建成功后，`build/` 下会生成：
 
-| 产物 | 内容 | 加载地址 |
-|---|---|---|
-| `boot.elf/.hex/.bin` | 独立 Boot | `0x08000000` |
-| `app.elf/.hex/.bin` | 独立 App | `0x08020000` |
-| `stm32h743xi_threadx_netx.elf/.hex/.bin` | Boot + App 组合固件 | `0x08000000` |
-| `boot.map` / `app.map` | 各镜像链接映射 | — |
-| `compile_commands.json` | IDE/clangd 索引数据库 | — |
+| 文件 | 说明 |
+| --- | --- |
+| `*.elf` | 带调试信息的可执行文件，烧录用它 |
+| `*.hex` / `*.bin` | 烧录镜像 |
+| `*.map` | 内存映射，排查体积/链接问题用 |
+| `compile_commands.json` | clangd 补全用 |
+| （终端会打印 Flash / RAM 占用） | |
 
-只想快速编译某个镜像时，可以指定 target：
+产物名自动跟随工程目录名：`build/STM32H743-ThreadX-NetXDuo_Demo.elf`。
+
+---
+
+## 6. 烧录与运行
+
+### 方式 A：一条命令（与模板一致，推荐）
 
 ```bash
-cmake --build cmake/build/Debug --target app
-cmake --build cmake/build/Debug --target boot
+./run.sh flash        # 编译 + 用 OpenOCD 烧录（内部执行 openocd -f flash）
 ```
 
-### 5.2 Flash 分区与烧录
+或分步：
 
-| 区域 | 起始地址 | 长度 | 说明 |
-|---|---:|---:|---|
-| Boot | `0x08000000` | `0x00020000`（128 KiB） | 复位入口、App 合法性检查和跳转 |
-| App | `0x08020000` | `0x001E0000`（1920 KiB） | ThreadX + NetX Duo 应用 |
-
-STM32H743XIH6 有 2 MiB Flash，App 分区因此从 896 KiB 扩到 1920 KiB 吃满整片，结束于 `0x08200000`。
-
-推荐直接烧录组合固件：
-
-- 烧录 `.hex` 时地址已经包含在文件中，无需手动指定基地址。
-- 烧录组合 `.bin` 时，基地址必须设置为 `0x08000000`。
-- 单独烧录 `app.bin` 时，基地址必须设置为 `0x08020000`，不能按默认 Flash 起点写入。
-- 单独烧录 `boot.bin` 时，基地址为 `0x08000000`。
-
-仓库当前没有 `flash`/`reset` CMake target。可使用 J-Link Commander、J-Flash、
-STM32CubeProgrammer 或 IDE 下载生成的 ELF/HEX/BIN。调试 App 时优先加载 `app.elf` 的符号，
-并确认调试器知道 App 向量表位于 `0x08020000`。
-
-Boot 只检查两项：
-
-1. App 初始 MSP 是否位于 DTCM `0x20000000~0x20020000`。
-2. App Reset Handler 是否带 Thumb 位，且地址落在 App Flash 分区。
-
-当前没有 CRC、签名和版本检查，因此向量表合法不等于固件内容完整。
-
-### 5.3 Keil / MDK-ARM
-
-仓库不附带 `.uvprojx`。如需建立 Keil 工程，应以 CMake 文件中的源文件和宏为权威来源，并分别建立
-Boot、App 两个 target：
-
-1. MCU 选择 `STM32H743XIH6`，C 标准使用 C11。
-2. Boot IROM 起点/长度设置为 `0x08000000 / 0x00020000`。
-3. App IROM 起点/长度设置为 `0x08020000 / 0x001E0000`。
-4. App 定义 `USER_VECT_TAB_ADDRESS` 和 `VECT_TAB_OFFSET=0x00020000U`。
-5. ThreadX 使用 `ports/cortex_m7/ac6`，不要混用 GNU 移植层。
-6. NetX Duo 加入 `common/src` 和 DHCP addon，并使用 `User/netxduo/nx_user.h`。
-7. Scatter file 需要复现链接脚本中的 DTCM、非缓存 AXI SRAM 和 ETH 描述符布局。
-
-尤其不能把 GNU ld 的 `STM32H743xI_flash.ld` 直接当作 Keil scatter file 使用。新增或删除源文件时，
-CMake 与 Keil 工程分组也必须同步维护。
-
-### 5.4 RTT 调试输出
-
-运行日志通过 SEGGER RTT 的 4 个终端分流：
-
-| 终端 | 编号 | 内容 |
-|---|---:|---|
-| `Manage_Terminal` | 1 | CPU 利用率、峰值、系统时钟和线程栈状态 |
-| `Net_Info_Terminal` | 2 | link、IP 来源、IP/MAC/DNS、协议计数和 packet pool |
-| `Netx_Terminal` | 3 | PHY、DHCP、link、TCP Client/Server Echo 事件 |
-| `Other_Terminal` | 4 | 标准 `printf` / `_write` 输出 |
-
-业务线程中使用：
-
-```c
-#include "threadx_printf.h"
-
-threadx_printf(Netx_Terminal,
-               "[my_app] status=%u\r\n",
-               (unsigned)status);
+```bash
+./run.sh              # 只编译
+openocd -f flash      # 烧录（必须在工程根目录，flash 里用相对路径）
 ```
 
-`threadx_printf` 单次格式化缓冲区为 200 字节，超长内容会截断；其内部使用继承优先级的 mutex，
-只能在线程上下文和初始化完成后使用。
+`flash` 默认走 **DAPLink / CMSIS-DAP**；若用 ST-Link，把 `flash` 里
+`interface/cmsis-dap.cfg` 那行注释掉、改用 `interface/stlink.cfg` 即可。
+芯片被锁 / 一上电就进低功耗导致连不上时，用「连接复位」版：
 
-## 6. 关键设计要点
-
-### 6.1 Boot → App 启动链路
-
-完整启动关系如下：
-
-```text
-MCU Reset
-  → Boot Reset_Handler
-    → boot_main.c: main()
-      → 读取 0x08020000 处的 MSP / Reset_Handler
-      → 关闭 SysTick、NVIC 中断和挂起状态
-      → VTOR = 0x08020000，恢复特权 MSP 模式
-      → 跳转 App Reset_Handler
-        → User/main.c: main()
-          → MPU_Config + I/D Cache + HAL + 480 MHz 时钟 + RTT
-          → tx_kernel_enter()
+```bash
+openocd -f flash-reset
 ```
 
-Boot 和 App 使用同一份参数化链接脚本，但由 CMake 分别注入 Flash 起点、长度和向量偏移。不要在源文件
-中另写一套地址常量；调整分区时应同时修改 `cmake/user.cmake`、Boot 校验参数和烧录流程。
-
-### 6.2 H7 Cache 与网络内存布局
-
-STM32H7 开启 D-Cache 后，CPU Cache 与 ETH DMA 不能直接共享普通缓存内存，否则会出现“CPU 看到了、
-DMA 没看到”或相反的隐蔽故障。本工程通过 MPU 和链接脚本划分两块非缓存网络内存：
-
-| 区域 | 地址/长度 | MPU 属性 | 放置内容 |
-|---|---|---|---|
-| `RAM_D1_NOCACHE` | `0x24000000` / 64 KiB | region 1，非缓存 | NetX packet pool（`.NetXPoolSection`） |
-| `RAM_D2` | `0x30000000` / 288 KiB | **仅前 32 KiB** 为 region 0 非缓存 | ETH RX/TX DMA 描述符（在 `0x30000000` 起） |
-| `RAM_D1` | `0x24010000` / 448 KiB | 默认可缓存 | 预留，当前未使用 |
-| `RAM_D3` | `0x38000000` / 64 KiB | 默认可缓存 | 预留，当前未使用 |
-| DTCM | `0x20000000` / 128 KiB | 默认可缓存 | 普通 `.data/.bss`、线程栈、ThreadX 对象 |
-
-`RAM_D2` 在链接脚本里按芯片真实容量声明为 288 KiB，但 MPU region 0 只覆盖前 32 KiB
-（MPU 长度只能是 2 的幂，288 KiB 无法用一个 region 表达）。ETH 描述符放在最前面，所以是安全的；
-**但往 `0x30008000` 之后放 DMA buffer 时它是可缓存的**，必须自己维护 Cache clean/invalidate，
-或者同时新增 MPU region。
-
-`MPU_Config()` 必须在启用 D-Cache 前执行。不要随意删掉 MPU region、section 属性或 32/128 字节对齐；
-新增 DMA buffer 时也应放入合适的非缓存区域，或者显式维护 Cache clean/invalidate。
-
-### 6.3 线程优先级规划
-
-ThreadX 数值越小优先级越高。当前代码的分配如下：
-
-| 线程 | 优先级 | 职责 |
-|---|---:|---|
-| NetX IP 线程 | **2** | 协议栈核心、收发、ACK、TCP 定时器 |
-| App Task Start | 2 | 一次性启动引导，完成后终止并删除 |
-| TCP Server Echo setup/worker ×10 | 3 | listen、accept 和并发 Echo |
-| TCP Client Echo | 5 | 连接固定服务端、接收并原样回发 |
-| NetX DHCP 内部线程 | 6 | DHCP 状态机（`NX_DHCP_THREAD_PRIORITY`） |
-| App ETH | 10 | 创建网络模块、刷新状态表 |
-| App ETH Link Check | 10 | PHY 轮询、link 状态、RX 描述符兜底 |
-| App ETH DHCP 控制线程 | 10 | 应用配置、DHCP/fallback 管理 |
-| App Task STAT | 30 | CPU 和线程栈统计 |
-| App Task IDLE | 31 | 空闲计数 |
-
-NetX IP 线程必须保持最高优先级之一，避免业务线程长期阻塞 ACK、重传和 RX 处理。新增实时网络业务建议
-放在 4~9；后台维护任务放在 11 及以上。不要创建优先级高于 2、且长期占用 CPU 的业务线程。
-
-### 6.4 link 状态与订阅 API
-
-`app_eth_link_check` 使用电平事件维护真实 link 状态，不依赖
-`ip.nx_ip_driver_link_up`。电平事件会在状态持续期间保持置位，因此多个等待者不会互相抢事件。
-
-```c
-#include "app_eth_link_check.h"
-
-enum app_eth_link_state state = app_eth_link_get_state();
-
-app_eth_link_wait_up(TX_WAIT_FOREVER);
-app_eth_link_wait_down(timeout_ticks);
-
-struct link_sub sub;
-enum app_eth_link_state new_state;
-
-app_eth_link_sub_init(&sub);
-app_eth_link_wait_change(&sub, &new_state, TX_WAIT_FOREVER);
-```
-
-link UP 时，检查线程还会扫描 HAL ETH 的 RX 描述符，为之前因 packet pool 紧张而没有挂上 buffer 的
-描述符重新补给，避免所有 RX 描述符耗尽后 DMA 无法继续收包。
-
-### 6.5 DHCP、静态 IP 和运行时状态
-
-默认配置定义在 `app_eth_config_get_default()`：
-
-| 配置项 | 默认值 |
-|---|---|
-| DHCP | 启用 |
-| DHCP 超时 | 30 秒 |
-| 静态/回退 IP | `192.168.2.233/24` |
-| 网关 | `192.168.2.1` |
-| DNS | `8.8.8.8`、`8.8.4.4` |
-| MAC | 由 STM32H743 96 位 UID 生成 |
-
-静态字段有两种用途：
-
-- `dhcp_enable = 1`：DHCP 超时后使用这组地址作为 fallback。
-- `dhcp_enable = 0`：直接把这组地址作为正式静态配置。
-
-读取和应用配置：
-
-```c
-#include "app_eth_config.h"
-
-struct app_eth_config cfg;
-
-app_eth_config_get_current(&cfg);
-cfg.dhcp_enable = 0;
-cfg.ip = IP_ADDRESS(192, 168, 2, 100);
-cfg.mask = 0xFFFFFF00UL;
-cfg.gateway = IP_ADDRESS(192, 168, 2, 1);
-
-UINT status = app_eth_config_apply(&cfg);
-```
-
-`app_eth_config_apply()` 只做校验、写 pending 和发送事件；真正的 IP/DHCP 切换由 DHCP 控制线程完成。
-要读取当前实际生效的网络状态，而不是“配置里写了什么”，使用：
-
-```c
-struct app_eth_status status;
-
-app_eth_status_get(&status);
-/* status.ip / mask / gateway / dns1 / dns2 / link / ip_source */
-```
-
-`ip_source` 可能是 `APP_ETH_IP_STATIC`、`APP_ETH_IP_DHCP` 或
-`APP_ETH_IP_DHCP_FALLBACK`。
-
-默认 MAC 使用 96 位 UID 经 64 位散列生成，并强制设置为本地管理的单播地址。相同芯片每次启动得到
-相同 MAC，不同芯片通常得到不同 MAC。该方案适合开发和内部网络；商业量产若要求地址分配可审计、
-绝对避免冲突，应使用正式 MAC 地址段并在生产阶段烧录。
-
-配置尚未持久化。MAC 通过 `app_eth_config_apply()` 改变时会触发软复位，但复位后仍会回到 UID 生成的
-默认 MAC，直到实现 Flash/EEPROM 持久化。
-
-### 6.6 TCP Server Echo 与 Client Echo
-
-#### TCP Server Echo
-
-`app_tcp_server_echo.c` 监听端口 7777，最多 10 个并发连接。每个已连接 socket 由 worker 处理，
-收到的 `NX_PACKET` 直接原样发送，发送成功后包的所有权交还 NetX，发送失败才由应用释放。
-
-Server 使用动态 listen/unlisten 接力：
-
-- 有空闲 socket 时，通过 relisten 补上监听槽位。
-- 10 个 socket 全部占用时取消监听，让超额连接立即收到 RST。
-- worker 归还 socket 后重新开启监听。
-
-这比把额外 SYN 长时间留在 listen queue 中更容易让客户端及时感知“服务已满”。
-
-#### TCP Client Echo
-
-Client 的目标集中定义在 `app_tcp_client_echo.h`：
-
-```c
-#define APP_TCP_CLIENT_ECHO_SERVER_IP_A 192U
-#define APP_TCP_CLIENT_ECHO_SERVER_IP_B 168U
-#define APP_TCP_CLIENT_ECHO_SERVER_IP_C 2U
-#define APP_TCP_CLIENT_ECHO_SERVER_IP_D 2U
-#define APP_TCP_CLIENT_ECHO_SERVER_PORT 7777U
-```
-
-它等待本机获得 IP 后连接 `192.168.2.2:7777`，连接失败或断开时自动重试。连接成功后不主动生成
-业务数据，只等待对端发送，并把收到的 packet 原样回发。
-
-> 不要让两个“无条件 Echo”端点互相连接后再注入数据。两边都会继续回发同一份数据，形成无限
-> Echo 循环并持续占用网络与 CPU。测试 Client Echo 时，对端应当是“发送一次、验证响应”的测试程序，
-> 而不是另一个收到数据就永久回发的 Echo 服务。
-
-### 6.7 packet pool 和 ETH 描述符
-
-`app_eth.c` 创建 30 个、每个有效载荷 1536 字节的 packet。计算时还包含 `NX_PACKET` 头和对齐，
-最终整个 pool 放入 64 KiB 非缓存 AXI SRAM。ETH RX/TX 描述符各 4 个，放在 `0x30000000` 的
-非缓存 RAM_D2。
-
-packet 会同时被 TCP 未确认发送队列、RX 描述符、DHCP 和业务 socket 占用。不要因为空闲时看起来
-富余就随意减小 30；增加并发、扩大 TCP window 或增加协议模块后，应观察 `Net_Info_Terminal` 的
-`free`、`empty_req` 和 `suspended` 再评估容量。
-
-## 7. 在此基础上增加业务
-
-### 7.1 删除或替换 Echo 示例
-
-产品工程不需要 Echo 时：
-
-1. 删除 `app_tcp_server_echo.*` 和/或 `app_tcp_client_echo.*`。
-2. 从 `app_eth.c` 删除对应 include 和 `*_create()` 调用。
-3. 从 `cmake/user_app.cmake` 删除对应 `.c`。
-
-如果要实现多连接 TCP Server，建议先阅读 Server Echo 顶部关于 listen/relisten/unlisten 的说明；
-如果要实现主动连接业务，可在 Client Echo 的自动重连框架上替换收发循环。
-
-### 7.2 挂接新线程
-
-当前业务启动链路：
-
-```text
-tx_application_define()
-  → AppTaskStart
-    → AppTaskCreate()
-      → thread_eth_create()
-        → thread_eth_entry()
-          → app_eth_config_init()
-          → nx_ip_create() + ARP/ICMP/UDP/TCP
-          → app_eth_link_check_create()
-          → app_eth_dhcp_create()
-          → app_tcp_server_echo_create()
-          → app_tcp_client_echo_create()
-```
-
-一般网络业务可在 `thread_eth_entry()` 中调用自己的 `xxx_create()`；业务线程内部先等待 link 或 IP：
-
-```c
-app_eth_link_wait_up(TX_WAIT_FOREVER);
-
-ULONG actual_status;
-nx_ip_status_check(&ip,
-                   NX_IP_ADDRESS_RESOLVED,
-                   &actual_status,
-                   NX_WAIT_FOREVER);
-```
-
-仅依赖二层 link 的模块等待 link UP 即可；需要 TCP/UDP 地址通信的模块应等待
-`NX_IP_ADDRESS_RESOLVED`。
-
-### 7.3 API 使用边界
-
-业务代码可以直接使用：
-
-- `app_eth_link_get_state/wait_up/wait_down/sub_init/wait_change`
-- `app_eth_config_get_default/get_current/apply`
-- `app_eth_status_get`
-- `threadx_printf/threadx_printf_clear/threadx_printf_cmd`
-- NetX Duo 公共 `nx_*` API；IP 实例为全局 `extern NX_IP ip`
-
-不要调用 `_app_eth_config_snapshot()`、`_app_eth_config_wait_pending()`、`_app_eth_status_set()`。
-下划线前缀接口是 DHCP 模块内部契约，绕过它们会破坏 config/status 一致性。
-
-### 7.4 配置持久化 TODO
-
-`struct app_eth_config` 已按 64 字节定长 blob 设计，包含 `magic`、`version`、预留字段和末尾
-`crc32`。实现持久化时建议：
-
-1. 启动时从内部 Flash、外部 Flash 或 EEPROM 读取 64 字节配置。
-2. 校验 `magic/version/crc32` 和网络字段；失败时调用 `app_eth_config_get_default()`。
-3. `app_eth_config_apply()` 校验成功后，把新配置写入存储介质。
-4. MAC 改变时先完成持久化，再执行软复位，使 ETH 初始化读到新 MAC。
-
-新增字段优先从 `_rsv2[16]` 中分配，不要轻易改变已有字段顺序或总大小。
-
-## 8. 已知行为 / 限制
-
-- **App 必须烧到 `0x08020000`**：单独下载 `app.bin` 到 `0x08000000` 会覆盖 Boot，且 App
-  的向量偏移与链接地址都不匹配。
-- **Boot 仅校验向量表**：没有 CRC、签名、版本、升级状态和回滚策略。
-- **网络配置不持久化**：复位恢复 DHCP + `192.168.2.233` fallback 等默认值。
-- **Client Echo 目标固定**：默认 `192.168.2.2:7777`，换网络前修改
-  `app_tcp_client_echo.h`。
-- **两个 Echo 端点会形成回声循环**：对端也无条件 Echo 时，不要注入业务数据。
-- **DHCP 模式在新的 link UP 后会重试**：即使此前已经 fallback，只要配置中的
-  `dhcp_enable` 仍为 1，拔插网线后的 link UP 会重新启动 DISCOVER；纯静态模式不会。
-- **Cache 属性不可随意改变**：packet pool 和描述符离开非缓存区后，必须补充严格的 Cache 维护。
-- **packet pool 是共享资源**：高并发 TCP、DHCP 和 RX 描述符会共同消耗 30 个 packet。
-- **IPv6 已关闭**：`User/netxduo/nx_user.h` 定义了 `NX_DISABLE_IPV6`。
-- **没有 TLS 和业务鉴权**：Echo 数据为明文，只用于局域网联调和示例。
-- **标准 `printf` 依赖 ThreadX printf mutex**：App 内核初始化前不要走 `_write`；Boot 使用 RTT 的
-  weak `__io_putchar` 路径，不依赖该 mutex。
-
-## 9. PHY 与板级 Ethernet
-
-### 9.1 当前 PHY 结构
-
-当前使用 ST LAN8742 组件驱动来驱动板上的 LAN8720A：
-
-- `User/dev/lan8742/`：ST 提供的 LAN8742 寄存器和状态机实现。
-- `User/netxduo/lan8720/nx_stm32_phy_driver.c`：NetX ETH 驱动要求的 PHY 适配接口。
-- `User/bsp/src/bsp_eth.c`：RMII GPIO、PHY 就绪延时、ETH HAL 和中断。
-
-目录名保留为 `lan8720`，实际组件和日志仍以 LAN8742 命名，这是历史原因，不影响功能：
-**LAN8720A 与 LAN8742A 的厂商寄存器布局一致**，PHY 地址都镜像在 0x12 寄存器（Special Modes
-Register）的低 5 位，所以同一套代码对两者都成立。PHY 初始化会扫描 0~31 地址，并用该地址字段
-确认设备，不在上层硬编码固定 MDIO 地址。
-
-板上 `RXER/PHYAD0` 未连接（内部下拉），PHY 地址固定为 0。上板后可看 `Netx_Terminal` 的
-`[phy] init ok: addr=0, ID1=0x0007, ID2=0xC0F1` —— LAN8720A 的 ID 是 `0x0007/0xC0F1`，
-LAN8742A 则是 `0x0007/0xC130`，用 ID2 可以区分实际焊的是哪一颗。
-
-### 9.2 PHY 适配接口
-
-NetX ETH 驱动通过以下接口访问 PHY：
-
-```c
-int32_t nx_eth_phy_init(void);
-int32_t nx_eth_phy_get_link_state(void);
-int32_t nx_eth_phy_set_link_state(int32_t linkstate);
-nx_eth_phy_handle_t nx_eth_phy_get_handle(void);
-```
-
-`nx_eth_phy_get_link_state()` 返回 `ETH_PHY_STATUS_LINK_DOWN`、
-`ETH_PHY_STATUS_100MBITS_FULLDUPLEX` 等状态，NetX 驱动据此更新 MAC 速率和双工模式。
-
-### 9.3 更换 PHY
-
-1. 新增或替换 `User/netxduo/<phy>/` 适配目录，实现上述 4 个接口。
-2. 使用 `HAL_ETH_ReadPHYRegister()` / `HAL_ETH_WritePHYRegister()` 完成 MDIO 访问。
-3. 在 `cmake/user_app.cmake` 中替换 PHY include 路径和源文件。
-4. 若不再使用 LAN8742 组件，从构建列表中移除 `User/dev/lan8742/lan8742.c`。
-5. 核对 RMII/MII 模式、PHY nRST、REF_CLK、MDIO 地址和协商速率。
-6. 使用 Keil 时同步修改工程分组和 include path。
-
-更换为千兆 PHY 不代表 STM32H743 内置 MAC 自动支持千兆；必须以 MCU Ethernet MAC、板级接口和
-PHY 工作模式的共同能力为准。
-
-## 10. User/ 代码来源
-
-| 目录 | 来源 | 说明 |
-|---|---|---|
-| `User/app/` | 本工程自研 | ThreadX 业务线程、网络配置、link 状态机和 Echo 示例 |
-| `User/boot/` | 本工程自研 | App 向量校验和跳转 |
-| `User/bsp/` | 本工程自研 / CubeMX 基础上整理 | 时钟、MPU、Cache、ETH 和 RTT 初始化 |
-| `User/core/` | STM32CubeMX / CMSIS 模板 | 中断、HAL MSP、system、syscalls |
-| `User/netxduo/nx_stm32_eth_driver.*` | Microsoft Azure RTOS / ST 模板改写 | NetX Duo 与 STM32 HAL ETH 适配 |
-| `User/netxduo/lan8720/` | ST PHY 模板适配 | LAN8742 与 NetX ETH 驱动之间的接口层 |
-| `User/dev/lan8742/` | ST 官方组件 | LAN8742 寄存器和 PHY 控制 |
-| `User/SEGGER_RTT/` | SEGGER 配置 | RTT 用户配置 |
-
-以下用户配置/移植文件可对照 submodule 中的官方模板：
-
-| 本工程文件 | 官方参考 |
-|---|---|
-| `User/threadx/tx_user.h` | `Middlewares/threadx/common/inc/tx_user_sample.h` |
-| `User/threadx/tx_initialize_low_level.S` | ThreadX `ports/cortex_m7/gnu` 示例 |
-| `User/netxduo/nx_user.h` | `Middlewares/netxduo/common/inc/nx_user_sample.h` |
-| `User/SEGGER_RTT/config/SEGGER_RTT_Conf.h` | `Middlewares/SEGGER_RTT/Config/SEGGER_RTT_Conf.h` |
-
-ThreadX、NetX Duo、STM32 HAL/CMSIS、LAN8742 和 SEGGER RTT 分别遵循各自目录中的许可文件。
+### 方式 B：VS Code（F5）
+
+工程已带 `.vscode/launch.json`，支持 **OpenOCD + ST-Link** 和 **OpenOCD + DAPLink** 两种。
+按 `F5` 即可：自动烧录 → 停在 `main` → 开始运行。
+
+---
+
+## 7. 查看调试输出（串口 / RTT）
+
+所有日志通过 **SEGGER RTT** 输出，三种查看方式任选其一：
+
+1. **J-Link RTT Viewer**（推荐）
+   打开 SEGGER 家的 *RTT Viewer*，选择调试器（ST-Link / J-Link）→ 芯片 `STM32H743`，
+   连接后能看到 4 个终端：
+   - 终端 1 `Manage_Terminal`：任务状态 / CPU 占用率条形图
+   - 终端 2 `Net_Info_Terminal`：以太网状态、统计
+   - 终端 3 `Netx_Terminal`：NetX 业务日志（DHCP / echo / link）
+   - 终端 0 / 4 `Other_Terminal`：标准 `printf` 输出
+2. **telnet**：`telnet 127.0.0.1 19021`（RTT 默认端口），也能看到输出。
+3. VS Code 里装 *cortex-debug* 后，RTT 会直接显示在调试控制台。
+
+> 如果连上后**看不到任何输出**：先确认板子已经跑起来（OpenOCD 烧录成功、程序在跑）；
+> RTT 需要在程序运行后、且 `RTT_viewer_init()` 已执行才能捕获。板子复位一下再连通常就好了。
+
+---
+
+## 8. 代码导览（从 main 到网络）
+
+1. `User/main.c`
+   `System_Init()`（MPU/缓存/480MHz 时钟/RTT 初始化）→ `HAL_SuspendTick()` → `tx_kernel_enter()`。
+2. `tx_kernel_enter()` → ThreadX 底层初始化 → 调用 **`tx_application_define()`**
+   （在 `User/app/src/threadx_kernel.c`）。
+3. `tx_application_define()` 创建三个内核任务：
+   - `App Task Start`（优先级 2）：恢复 HAL tick、初始化 printf 互斥锁、`bsp_Init()`、
+     调用 `AppTaskCreate()`（在 `threadx_task_manager.c` 里创建网络任务），然后自终止；
+   - `App Task STAT`（优先级 30）：每秒打印一次 CPU 占用与任务栈；
+   - `App Task IDLE`（优先级 31）：空转累加计数，供 CPU 占用统计。
+4. `User/app/src/app_eth.c` 等：初始化 NetX IP 实例、DHCP 拿 IP、启动 TCP echo。
+5. `User/app/src/threadx_printf.c`：把 `printf`/`threadx_printf` 重定向到 RTT 多终端，
+   并加 `TX_MUTEX` 做互斥，避免多线程交错打印乱码。
+
+**想加自己的任务？** 在 `threadx_task_manager.c` 的 `AppTaskCreate()` 里照葫芦画瓢
+`tx_thread_create()` 一个线程即可，参考已有任务的写法。
+
+---
+
+## 9. 常见问题
+
+- **`Middlewares/threadx` / `Middlewares/netxduo` 为空，编译报找不到 `tx_api.h`**
+  → 忘了拉子模块，执行 `git submodule update --init --recursive`。
+- **链接报 `PendSV_Handler` / `SysTick_Handler` 重复定义或缺失**
+  → 确认 ThreadX 是用 OBJECT 库编译的（见第 2 节），不要把 threadx 改成静态库。
+- **烧录后板子没反应 / 不打印**
+  → 先看 OpenOCD 是否识别到芯片；再用 RTT Viewer 复位重连；确认用的链接脚本
+     `STM32H743XX_FLASH.ld` 在根目录、且 `startup_stm32h743xx.s` 也在根目录。
+- **网口不亮 / 拿不到 IP**
+  → 检查网线、路由器 DHCP 是否开启；PHY 型号（V7 是 LAN8742A）与
+     `User/netxduo/nx_stm32_eth_config.h` 里的配置是否对应。
+- **`-Wl,--no-warn-rwx-segments` 相关告警**
+  → 正常，新版本 ld 对 RWX 段告警，已在工具链里静默处理，不影响运行。
+- **编译卡住 / 不动（Windows 上某个 gcc 进程长时间无进展）**
+  → mingw 高并行度下偶发进程派生死锁（与代码无关）。降低并行度即可：
+    `JOBS=2 ./run.sh`（或 `cmake --build build -- -j 2`）。本工程用 `JOBS=2`
+    在 Debug / Release 下均已验证可跑通。
+
+---
+
+## 10. 如何扩展
+
+- **改成静态 IP**：改 `User/app/src/app_eth_config.c` 里的 IP 相关宏，关掉 DHCP 分支；
+- **加协议**：NetX Duo 已编译了 TCP/UDP/ICMP/DHCP，要 HTTP/MQTT 等可把对应 addon
+  源文件加进 `cmake/netxduo.cmake` 的源文件列表；
+- **换板子**：改 `STM32H743XX_FLASH.ld` 的存储器分布、`startup_stm32h743xx.s` 的向量表、
+  以及 `stm32h7xx_hal_conf.h` 里的时钟与 HSE 值即可，其余结构不变。
+
+---
+
+## 11. 参考
+
+- 安富莱《STM32H7 ThreadX 教程》第 1~23 章
+- Eclipse ThreadX：`github.com/eclipse-threadx/threadx`、`github.com/eclipse-threadx/netxduo`
+- SEGGER RTT 文档（SEGGER 官网）
+- 本工程改编模板：`Cmake_threadX_Template`（同机 `Desktop/Projects/` 下）

@@ -1,34 +1,45 @@
 {
+    "version": "0.2.0",
     "configurations": [
         {
-            "name": "H7_Debug_App",
-            "type": "stlinkgdbtarget",
+            "name": "Debug (OpenOCD + DAPLink)",
+            "type": "cortex-debug",
             "request": "launch",
+            "servertype": "openocd",
             "cwd": "${workspaceFolder}",
-            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
-            "runEntry": "main",
-            "imagesAndSymbols": [
-                {
-                    "imageFileName": "${workspaceFolder}/cmake/build/Debug/app.elf"
-                }
+            "executable": "${workspaceFolder}/build/${workspaceFolderBasename}.elf",
+            "configFiles": [
+                "interface/cmsis-dap.cfg",
+                "target/stm32h7x.cfg"
             ],
-            "svdPath": "${workspaceFolder}/cmake/STM32H743.svd",
-            "verbose": false
+            "searchDir": [
+                "D:/Embedded_Toolchain/xpack-openocd/0.12.0-7/xpack-openocd-0.12.0-7/openocd/scripts"
+            ],
+            "openocdPath": "D:/Embedded_Toolchain/xpack-openocd/0.12.0-7/xpack-openocd-0.12.0-7/bin/openocd.exe",
+            "armToolchainPath": "D:/Embedded_Toolchain/arm-none-eabi-gcc/15.3.rel2/bin",
+            "device": "STM32H743XIHx",
+            "runToEntryPoint": "main",
+            "showDevDebugOutput": "none"
         },
         {
-            "name": "H7_Debug_Boot",
-            "type": "stlinkgdbtarget",
+            "name": "Debug (OpenOCD + ST-Link)",
+            "type": "cortex-debug",
             "request": "launch",
+            "servertype": "openocd",
             "cwd": "${workspaceFolder}",
-            "preBuild": "${command:st-stm32-ide-debug-launch.build}",
-            "runEntry": "main",
-            "imagesAndSymbols": [
-                {
-                    "imageFileName": "${workspaceFolder}/cmake/build/Debug/boot.elf"
-                }
+            "executable": "${workspaceFolder}/build/${workspaceFolderBasename}.elf",
+            "configFiles": [
+                "interface/stlink.cfg",
+                "target/stm32h7x.cfg"
             ],
-            "svdPath": "${workspaceFolder}/cmake/STM32H743.svd",
-            "verbose": false
+            "searchDir": [
+                "D:/Embedded_Toolchain/xpack-openocd/0.12.0-7/xpack-openocd-0.12.0-7/openocd/scripts"
+            ],
+            "openocdPath": "D:/Embedded_Toolchain/xpack-openocd/0.12.0-7/xpack-openocd-0.12.0-7/bin/openocd.exe",
+            "armToolchainPath": "D:/Embedded_Toolchain/arm-none-eabi-gcc/15.3.rel2/bin",
+            "device": "STM32H743XIHx",
+            "runToEntryPoint": "main",
+            "showDevDebugOutput": "none"
         }
     ]
 }

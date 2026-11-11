@@ -1,0 +1,21 @@
+# 换行统一：入库时转 LF，检出时按平台
+* text=auto eol=lf
+
+# 源码与脚本
+*.c      text
+*.h      text
+*.s      text
+*.S      text
+*.ld     text
+*.cmake  text
+CMakeLists.txt text
+*.sh     text
+*.py     text
+*.md     text
+
+# 二进制与生成物（不应出现在仓库中，仅作保护）
+*.a      binary
+*.lib    binary
+*.elf    binary
+*.bin    binary
+*.hex    binary

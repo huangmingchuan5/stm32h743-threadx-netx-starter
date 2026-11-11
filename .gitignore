@@ -8,8 +8,19 @@
 # STM32Cube / IDE 本地环境状态（设备、工具链 bundle 版本等，因机器而异）
 .settings/
 
-# CMake
-/cmake/build/
+# CMake 构建产物（preset 生成的 build/，以及验证用的 build-rel/ 等）
+/build/
+/build-*/
+
+# 构建 / 验证日志
+*.log
+
+# clangd 缓存
+.clangd
+.cache/
+
+# 工具/会话元数据（不属于工程源码）
+.workbuddy/
 
 # 板级参考资料：野火原理图为第三方版权文档，不随仓库分发。
 # 本地需要时另行获取，放进仓库根目录即可（已被本规则忽略）。
