@@ -1,6 +1,6 @@
 # =============================================================================
-#  STM32H743-ThreadX-NetXDuo_Demo
-#  STM32H743XIHx (安富莱 V7) + ThreadX + NetX Duo 单镜像例程
+#  stm32h743-threadx-netx-starter
+#  STM32H743XIHx (安富莱 V7) + ThreadX + NetX Duo 单镜像起步模板
 #
 #  改编自 Cmake_threadX_Template，面向初学者：
 #   1. 单镜像（去掉原工程的 boot/app 双镜像固件容器，降低认知负担）。
